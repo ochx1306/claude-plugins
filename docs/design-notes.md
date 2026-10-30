@@ -82,10 +82,13 @@ plugins/code-comments/
 ### スクリプトの実装
 
 - Node で統一し、ホストだけで動かす（会社はホストに Node、VM に PHP。PHP の構文確認は SSH 経由）。
+- 今は依存なしで、関数とコメントを行単位のパターンマッチで抽出している（`scripts/lib/`）。
+  - 修飾子のない JS のメソッドは、シグネチャが 1 行で `{` で終わるものだけを検出する。関数の中の arrow 関数は対象外。
+  - 語彙表・禁止語・置き換え・経緯語は `vocabulary.json` に置き、スクリプトが読む。
+- 精度が足りなければ、パーサーに置き換える。
   - JS/TS: `typescript` の compiler API
-  - PHP: npm の `php-parser`（glayzzle）で JS からパースする。
-    hook は編集のたびに動くため、SSH 経由の `php -r` は遅さと VM 停止時の失敗を避けて使わない。
-    必要なのは関数と docblock の位置だけなので、PHP 本体は要らない。
+  - PHP: npm の `php-parser`（glayzzle）。SSH 経由の `php -r` は、hook が編集のたびに動くため使わない。
+  - プラグインのインストールでは `npm install` が実行されないため、依存の配り方（バンドルしてコミットするなど）を先に決める。
 
 ## 未決事項
 
@@ -93,5 +96,6 @@ plugins/code-comments/
 
 ## 次の作業
 
-- `hooks/hooks.json` と SessionStart で `rules/comments.md` を注入するスクリプト
-- 検出スクリプト（差分の取得 → 関数と docblock の抽出 → 検査）
+- 業務で試し、誤検出と見逃しを集める
+- 語彙の実例を `vocabulary.json` に追加する
+- docblock スキル（`skills/docblock/`）: 既存の docblock の語彙の集計、関数名の接頭辞からの述語の推定、references
