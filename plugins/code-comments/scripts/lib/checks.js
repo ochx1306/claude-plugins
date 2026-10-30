@@ -49,19 +49,179 @@ function findFunctions(lines, lang) {
 }
 
 /**
- * 関数宣言の直前に docblock があるかを判定する
+ * 関数宣言のすぐ上の行の行番号を返す
  *
  * デコレーターと PHP のアトリビュートは docblock と宣言の間に入るため読み飛ばす。
  *
  * @param {string[]} lines
  * @param {number} line 関数宣言の行番号
- * @param {Set<number>} docEnds docblock の最終行の行番号
- * @returns {boolean}
+ * @returns {number} 該当する行がないときは 0
  */
-function hasDocblockAbove(lines, line, docEnds) {
+function lineAbove(lines, line) {
   let i = line - 2;
   while (i >= 0 && /^\s*(?:@\w|#\[)/.test(lines[i])) i--;
-  return i >= 0 && docEnds.has(i + 1);
+  return i + 1;
+}
+
+/**
+ * 関数の引数の名前を返す
+ *
+ * @param {string[]} lines
+ * @param {number} line 関数宣言の行番号
+ * @param {'php'|'js'} lang
+ * @returns {string[]|null} 引数の括弧が見つからないときと、分割代入のように名前のない引数があるときは null
+ */
+function functionParams(lines, line, lang) {
+  // 引数が複数行にわたるときのため、宣言行から 20 行までを対象にする
+  const text = lines.slice(line - 1, line + 19).join('\n');
+  const open = text.indexOf('(');
+  const arrow = text.indexOf('=>');
+  if (open === -1 || (arrow !== -1 && arrow < open)) return null;
+
+  const parts = [];
+  let current = '';
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    if ('([{<'.includes(c)) {
+      depth++;
+      if (depth === 1) continue;
+    } else if (')]}'.includes(c) || (c === '>' && text[i - 1] !== '=')) {
+      depth--;
+      if (depth === 0) {
+        parts.push(current);
+        break;
+      }
+    } else if (c === ',' && depth === 1) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += c;
+  }
+
+  const names = [];
+  for (const part of parts) {
+    const t = part.trim();
+    if (t === '') continue;
+    const m =
+      lang === 'php'
+        ? t.match(/\$(\w+)/)
+        : t.replace(/^(?:(?:public|private|protected|readonly|override)\s+)+/, '').match(/^(?:\.\.\.)?([A-Za-z_$][\w$]*)/);
+    if (!m) return null;
+    names.push(m[1]);
+  }
+  return names;
+}
+
+/**
+ * docblock の @param の名前を返す
+ *
+ * @param {{lines: {text: string}[]}} block
+ * @param {'php'|'js'} lang
+ * @returns {string[]} options.name のような入れ子の @param は、先頭の名前にまとめる
+ */
+function docParams(block, lang) {
+  const names = [];
+  for (const { text } of block.lines) {
+    if (!/^@param\b/.test(text)) continue;
+    let rest = text.slice('@param'.length).trim();
+    if (lang === 'js' && rest.startsWith('{')) rest = rest.slice(closingBrace(rest) + 1).trim();
+    const m = lang === 'php' ? rest.match(/\$(\w+)/) : rest.match(/^\[?(?:\.\.\.)?([A-Za-z_$][\w$]*)/);
+    if (m && !names.includes(m[1])) names.push(m[1]);
+  }
+  return names;
+}
+
+/**
+ * 先頭の { に対応する } の位置を返す
+ *
+ * @param {string} text { で始まる文字列
+ * @returns {number} 見つからないときは文字列の末尾の位置
+ */
+function closingBrace(text) {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    if (text[i] === '}' && --depth === 0) return i;
+  }
+  return text.length - 1;
+}
+
+/**
+ * docblock がファイル全体の説明かを判定する
+ *
+ * @param {string[]} lines
+ * @param {number} start docblock の開始行の行番号
+ * @returns {boolean} docblock より前に空行・<?php・'use strict'・行コメントしかなければ true
+ */
+function isFileHeader(lines, start) {
+  return lines.slice(0, start - 1).every((l) => /^\s*(?:<\?php|\/\/|#(?!\[)|['"]use strict['"];?\s*$|$)/.test(l));
+}
+
+/**
+ * 関数の docblock の有無と、docblock と引数の対応の問題を返す
+ *
+ * @param {string[]} lines
+ * @param {'php'|'js'} lang
+ * @param {Map<number, object>} docByEnd docblock の最終行の行番号から docblock への対応
+ * @param {(line: number) => boolean} isAdded
+ * @returns {{line: number, rule: string, message: string}[]}
+ */
+function checkFunctions(lines, lang, docByEnd, isAdded) {
+  const findings = [];
+  for (const fn of findFunctions(lines, lang)) {
+    const above = lineAbove(lines, fn.line);
+    const doc = docByEnd.get(above);
+    // 関数の間に別の関数を入れると、もとの関数の宣言行は変わらず、すぐ上の行だけが追加された行になる
+    const touched = isAdded(fn.line) || isAdded(above) || (doc && doc.lines.some((l) => isAdded(l.line)));
+    if (!touched) continue;
+
+    if (!doc) {
+      let l = above;
+      while (l > 0 && lines[l - 1].trim() === '') l--;
+      // 空行をはさんだ docblock は checkDetached が報告する
+      if (!docByEnd.has(l)) findings.push({ line: fn.line, rule: 'missing-docblock', message: `${fn.name} に docblock がない` });
+      continue;
+    }
+
+    const documented = docParams(doc, lang);
+    const actual = functionParams(lines, fn.line, lang);
+    if (actual === null || documented.length === 0) continue;
+    if (documented.some((name) => !actual.includes(name))) {
+      findings.push({
+        line: fn.line,
+        rule: 'docblock-mismatch',
+        message: `docblock の @param（${documented.join(', ')}）が ${fn.name} の引数（${actual.join(', ') || 'なし'}）と合わない。別の関数の docblock になっていないか確認する`,
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * 直後に空行がある docblock の問題を返す
+ *
+ * @param {string[]} lines
+ * @param {{start: number, end: number}[]} docs
+ * @param {(line: number) => boolean} isAdded
+ * @returns {{line: number, rule: string, message: string}[]}
+ */
+function checkDetached(lines, docs, isAdded) {
+  const findings = [];
+  for (const b of docs) {
+    // /** ... */ foo() のように同じ行にコードが続くものは、空行の判定から除く
+    if (!lines[b.end - 1].trim().endsWith('*/')) continue;
+    let next = b.end + 1;
+    while (next <= lines.length && lines[next - 1].trim() === '') next++;
+    if (next === b.end + 1 || next > lines.length || isFileHeader(lines, b.start)) continue;
+    let touched = false;
+    for (let l = b.start; l <= next; l++) touched = touched || isAdded(l);
+    if (touched) {
+      findings.push({ line: b.end, rule: 'docblock-detached', message: 'docblock の直後に空行がある。説明する宣言の直上に置く' });
+    }
+  }
+  return findings;
 }
 
 /**
@@ -122,9 +282,10 @@ function checkDocblockLayout(lines) {
  * summary の書式と述語の問題を返す
  *
  * @param {{line: number, text: string}} summary
+ * @param {boolean} isFunction 関数の docblock なら true。語彙表は関数の述語のため、ほかの docblock では述語を検査しない
  * @returns {{line: number, rule: string, message: string}[]}
  */
-function checkSummary(summary) {
+function checkSummary(summary, isFunction) {
   const findings = [];
   const text = summary.text;
   const add = (rule, message) => findings.push({ line: summary.line, rule, message });
@@ -134,7 +295,7 @@ function checkSummary(summary) {
   const body = text.replace(/。$/, '');
   if (/(です|ます|でした|ません)$/.test(body)) {
     add('summary-style', '常体で書く');
-  } else if (![...banned, ...replacements].some((b) => b.re.test(body)) && !predicateRe.test(body)) {
+  } else if (isFunction && ![...banned, ...replacements].some((b) => b.re.test(body)) && !predicateRe.test(body)) {
     add('summary-predicate', `述語が語彙表にない（文末: 「${body.slice(-8)}」）。語彙表: ${vocabulary.predicates.join(' / ')}`);
   }
   return findings;
@@ -189,12 +350,10 @@ function checkSource(source, lang, added) {
   const { lineComments, blocks } = scanComments(source, lang);
   const findings = [];
 
-  const docEnds = new Set(blocks.filter((b) => b.isDoc).map((b) => b.end));
-  for (const fn of findFunctions(lines, lang)) {
-    if (isAdded(fn.line) && !hasDocblockAbove(lines, fn.line, docEnds)) {
-      findings.push({ line: fn.line, rule: 'missing-docblock', message: `${fn.name} に docblock がない` });
-    }
-  }
+  const docs = blocks.filter((b) => b.isDoc);
+  const functionDocEnds = new Set(findFunctions(lines, lang).map((fn) => lineAbove(lines, fn.line)));
+  findings.push(...checkFunctions(lines, lang, new Map(docs.map((b) => [b.end, b])), isAdded));
+  findings.push(...checkDetached(lines, docs, isAdded));
 
   for (const c of lineComments) {
     if (isAdded(c.line)) findings.push(...checkCommentText(c, false));
@@ -212,7 +371,7 @@ function checkSource(source, lang, added) {
       findings.push({ line: b.start, rule: 'summary-missing', message: 'docblock に summary がない' });
       continue;
     }
-    findings.push(...checkSummary(summary), ...checkDocblockLayout(inner));
+    findings.push(...checkSummary(summary, functionDocEnds.has(b.end)),...checkDocblockLayout(inner));
   }
 
   return findings.sort((a, b) => a.line - b.line);
