@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PostToolUse(Edit|MultiEdit|Write) hook。編集で入った行のコメントを検査し、問題があれば Claude に差し戻す。
+// PostToolUse(Edit|MultiEdit|Write) hook。今回の編集で入った行のコメントを検査し、問題があれば Claude に差し戻す。
 const fs = require('fs');
 const { langOf } = require('./lib/scan');
 const { checkSource } = require('./lib/checks');

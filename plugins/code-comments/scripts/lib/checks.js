@@ -10,10 +10,10 @@ const predicateRe = new RegExp(`(${vocabulary.predicates.join('|')})$`);
 const JS_KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'with', 'function', 'return', 'super']);
 const PHP_FUNCTION = /^\s*(?:(?:abstract|final|public|protected|private|static)\s+)*function\s+&?([A-Za-z_]\w*)\s*\(/;
 const JS_FUNCTION = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*[<(]/;
-// 関数の中のヘルパーまで拾うと誤検出が多いため、トップレベルの宣言だけを対象にしている
+// 関数の中のヘルパーまで拾うと誤検出が多いため、トップレベルの宣言だけを対象にする
 const JS_ARROW = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:function\b|(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=>)/;
 const JS_METHOD_WITH_MODIFIER = /^\s+(?:(?:public|private|protected|static|async|override|abstract|readonly|get|set)\s+)+\*?([A-Za-z_$][\w$]*)\s*[<(]/;
-// 修飾子のないメソッドは関数呼び出しと区別しにくいため、シグネチャが 1 行で { で終わるものだけを対象にしている
+// 修飾子のないメソッドは関数呼び出しと区別しにくいため、シグネチャが 1 行で { で終わるものだけを対象にする
 const JS_METHOD = /^\s+\*?([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\([^)]*\)\s*(?::\s*[^{;=]+)?\{\s*$/;
 
 const CODE_LIKE = [
@@ -156,13 +156,13 @@ function checkCommentText(comment, isDoc) {
     if (b.re.test(text)) add('banned-word', `「${b.pattern}」は使わない（${b.reason}）`);
   }
   for (const r of replacements) {
-    if (r.re.test(text)) add('replace-word', `「${r.pattern}」は「${r.suggest}」にする（${r.reason}）`);
+    if (r.re.test(text)) add('replace-word', `「${r.label || r.pattern}」は「${r.suggest}」にする（${r.reason}）`);
   }
   const hit = history.find((re) => re.test(text));
   if (hit) {
     add('history', `変更経緯を書いていないか確認する（「${text.match(hit)[0]}」）。経緯はコミットメッセージや PR 説明に書く`);
   }
-  // 本文中で TODO という語に触れているだけのコメントを除くため、先頭にあるものだけを対象にしている
+  // 本文中で TODO などの単語を使っているコメントを除くため、先頭にあるものだけを対象にする
   if (/^(TODO|FIXME|XXX)\b/.test(text) &&!/(#\d+|[A-Z][A-Z0-9]+-\d+)/.test(text)) {
     add('todo-ticket', 'TODO にチケット番号がない');
   }
