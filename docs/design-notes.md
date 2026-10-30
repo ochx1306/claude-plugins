@@ -69,13 +69,14 @@ plugins/code-comments/
   - 「触れる」→「使う」「含む」など具体的な動詞（間接的でわかりにくい）
   - 文末の「〜している」→「〜する」（時系列を感じさせる。文の途中で状態を表す「〜しているため」はよい）
 - 既存の docblock の文末と述語をスクリプトで集計し、頻度表を AI に渡す（基準をこのリポジトリの実際の語彙にする）。
-- 関数名の接頭辞（get / is / to / create など）から述語をスクリプトで推定する。
 
 ### スクリプトでの検出（差分で追加された行だけを対象にする）
 
 - docblock がない関数（宣言行か、そのすぐ上の行が追加されたもの）
 - 直後に空行がある docblock（ファイル先頭の docblock は除く）
 - `@param` の名前が関数の引数にない docblock（関数の間に別の関数を差し込み、docblock がずれたもの）
+- 関数名の接頭辞（`vocabulary.json` の `prefixes`）から推定した述語と、summary の述語が違う docblock
+- docblock は変更されていないのに、宣言行が変わった関数。上の 2 つで判定できないずれと書き直し漏れを、関数名と summary を見比べて AI に確認させる
 - summary 行の文末・述語が語彙表にないもの（述語は関数の docblock だけ）
 - summary・詳細・タグのかたまりの間に空行が 1 行ないもの（2 行以上も含む）
 - 経緯語（`vocabulary.json` の `history`）。「今回」は「今回の修正」「今回から」、「対応」は「対応した」「対応済み」のように、変更の出来事を指すときだけ対象にする
@@ -102,4 +103,4 @@ plugins/code-comments/
 
 - 業務で試し、誤検出と見逃しを集める
 - 語彙の実例を `vocabulary.json` に追加する
-- docblock スキル（`skills/docblock/`）: 既存の docblock の語彙の集計、関数名の接頭辞からの述語の推定、references
+- docblock スキル（`skills/docblock/`）: 既存の docblock の語彙の集計、references

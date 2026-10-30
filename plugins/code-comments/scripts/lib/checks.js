@@ -187,16 +187,48 @@ function checkFunctions(lines, lang, docByEnd, isAdded) {
 
     const documented = docParams(doc, lang);
     const actual = functionParams(lines, fn.line, lang);
-    if (actual === null || documented.length === 0) continue;
-    if (documented.some((name) => !actual.includes(name))) {
+    if (actual !== null && documented.some((name) => !actual.includes(name))) {
       findings.push({
         line: fn.line,
         rule: 'docblock-mismatch',
         message: `docblock の @param（${documented.join(', ')}）が ${fn.name} の引数（${actual.join(', ') || 'なし'}）と合わない。別の関数の docblock になっていないか確認する`,
       });
+      continue;
+    }
+
+    const summary = innerLines(doc.lines).find((l) => l.text !== '');
+    if (!summary || summary.text.startsWith('@')) continue;
+    const used = summary.text.replace(/。$/, '').match(predicateRe);
+    const expected = vocabulary.prefixes[namePrefix(fn.name)];
+    if (used && expected && !expected.includes(used[1])) {
+      findings.push({
+        line: fn.line,
+        rule: 'predicate-mismatch',
+        message: `${fn.name} の接頭辞からは「${expected.join('」か「')}」が合うが、summary の述語は「${used[1]}」。別の関数の docblock になっていないか確認する`,
+      });
+      continue;
+    }
+    // @param と接頭辞で判定できないずれと、宣言を変えたときの docblock の書き直し漏れを、AI に確認させる
+    if (isAdded(fn.line) && !doc.lines.some((l) => isAdded(l.line))) {
+      findings.push({
+        line: fn.line,
+        rule: 'docblock-review',
+        message: `docblock は変更されていないが、宣言が変わった。関数名 ${fn.name} と summary「${summary.text}」が合っているか確認する`,
+      });
     }
   }
   return findings;
+}
+
+/**
+ * 関数名の接頭辞を返す
+ *
+ * @param {string} name camelCase か snake_case の関数名
+ * @returns {string} 小文字で始まらない名前は空文字列
+ */
+function namePrefix(name) {
+  const m = name.match(/^_*([a-z]+)(?=[A-Z0-9_]|$)/);
+  return m ? m[1] : '';
 }
 
 /**
