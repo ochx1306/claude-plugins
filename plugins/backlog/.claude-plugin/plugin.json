@@ -1,0 +1,8 @@
+{
+  "name": "backlog",
+  "version": "0.1.0",
+  "description": "Backlog の課題単位で作業コンテキストとブランチを準備する",
+  "author": {
+    "name": "ochx1306"
+  }
+}
