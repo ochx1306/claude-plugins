@@ -1,0 +1,13 @@
+{
+  "name": "ochx1306",
+  "owner": {
+    "name": "ochx1306"
+  },
+  "plugins": [
+    {
+      "name": "code-comments",
+      "source": "./plugins/code-comments",
+      "description": "コメントと docblock の原則を常に適用し、追加したコメントの問題を検出する"
+    }
+  ]
+}
