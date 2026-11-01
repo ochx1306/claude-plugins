@@ -20,59 +20,63 @@ Backlog の課題単位で作業コンテキストを `.claude/<課題キー>/` 
 node "${CLAUDE_SKILL_DIR}/scripts/assign.js" status "$ARGUMENTS"
 ```
 
-`next` の値で次の手順が決まる。
+## 進め方の原則
+
+- `question`・`branchQuestion`・`upstreamQuestion` は、`label` と `description` をそのまま `AskUserQuestion` に渡す。文言や選択肢を作り直さない。
+- 選ばれた選択肢の `run` を、そのまま Bash で実行する。`run` が `null` なら何もしない。git コマンドを自分で組み立てない。
+- `run` の結果の `ok` が `false` なら、`message` を伝えて止まる。
+- ユーザーが「Other」で選択肢にない指示をしたときだけ、その指示に従う（別の分岐元から切る、など）。
+
+## 手順
+
+`upstreamQuestion` があるときは、どの手順よりも先に聞く（→「上流を付けない理由」）。
+
+そのあとは `next` で決まる。
 
 | `next` | すること |
 |---|---|
 | `stop-not-git` | git リポジトリでないことを伝えて止まる |
 | `invalid-key` | `message` を伝え、課題キーを `AskUserQuestion` で聞き直す |
-| `ask-key` | 課題キーを `AskUserQuestion` で聞く。答えが来たら `node "${CLAUDE_SKILL_DIR}/scripts/assign.js" status <課題キー>` で取り直す |
-| `ask-create` | 手順 1A |
-| `ask-paste` | 手順 1A のコピペ依頼から行い、そのあと手順 2 |
-| `summarize` | 手順 1B、そのあと手順 2 |
+| `ask-key` | 課題キーを `AskUserQuestion` で聞く。答えが来たら `node "${CLAUDE_SKILL_DIR}/scripts/assign.js" status <課題キー>` で取り直し、その結果で続ける |
+| `ask-create` | 1A |
+| `ask-paste` | 1B（コピペの依頼）、そのあと 2 |
+| `summarize` | 1C、そのあと 2 |
 | `error` | `message` を伝えて止まる |
 
-`question` と `branchQuestion` は、そのまま `AskUserQuestion` に渡す。文言や選択肢を作り直さない。
+### 1A. 課題ディレクトリが無い
 
-`branch.upstreamWarning` があるときは、どの手順でも最初にその内容を伝える（→「上流を付けない理由」）。
+**勝手に作らない。** リポジトリを間違えて起動したパターンが十分あり得るため、必ず `question` を聞く。ディレクトリ作成とブランチ作成はまとめて 1 回で聞く。
 
-## 手順
+スクリプトが状況に合わせて選択肢を変えている。
 
-### 1A. `.claude/<課題キー>/` が無い場合
+- 課題キーを含むブランチが既にあれば、作り直さずにそのブランチへ切り替える
+- 未コミットの変更があれば、stash してから着手する（未着手の課題なので、手元の変更は別課題のものである可能性が高い）
 
-**勝手に作らない。** リポジトリを間違えて起動したパターンが十分あり得るため、必ず `question` を `AskUserQuestion` で聞く。ディレクトリ作成とブランチ作成はまとめて 1 回で聞く。課題キーを含むブランチが既にある場合、スクリプトはブランチ作成の選択肢を外した `question` を出す。存在するブランチを作り直そうとしない。
+「他リポジトリを探す」の `run` は、`~/.claude/backlog.json` の `repos` を検索する。`found` にあるリポジトリを提示し、そこで作業するか確認する。見つからなければその旨を伝えて止まる。
 
-**「他リポジトリを探す」を選ばれた場合**、ユーザーに確認せず次を実行する。
+「作成して着手」「ディレクトリのみ」の `run` の結果は `next: ask-paste` になる。`message` をそのまま伝え、1B に進む。
 
-```bash
-node "${CLAUDE_SKILL_DIR}/scripts/assign.js" find PP-1234
-```
+### 1B. 課題内容のコピペを依頼する
 
-`~/.claude/backlog.json` の `repos` に並べたリポジトリを検索する。`found` にあるリポジトリを提示し、そこで作業するか確認する。見つからなければその旨を伝えて止まる。`repos` が未設定なら `message` を伝える。
+`ask-paste` で来たときは、次のように頼む。
 
-**「作成して着手」を選ばれた場合**、ディレクトリを作り、ブランチを切る。
-
-```bash
-mkdir -p .claude/PP-1234
-git fetch origin hotfix
-git switch -c PP-1234 --no-track origin/hotfix
-```
-
-`origin/hotfix` が分岐元。`fetch` を挟むのは、手元の `origin/hotfix` が古いまま分岐すると差分が余計に乗るため。
-
-**`--no-track` を必ず付ける。** → 「上流を付けない理由」参照。
-
-`dirty.count` が 1 以上なら、ブランチを切る前に止めて確認する。この段階では未着手の課題なので、手元の変更は別課題のものである可能性が高い。
-
-`親課題.md` を雛形（下の「ファイル構成」参照）で作成してから、コピペを促す。
-
-> `.claude/PP-1234/` を作成し、`PP-1234` ブランチに切り替えました。Backlog の課題ページを開いて、「課題キーとタイトル」と「本文」を貼ってください。 `親課題.md` に保存します。
+> Backlog の課題ページを開いて、「課題キーとタイトル」と「本文」を貼ってください。 `親課題.md` に保存します。
 
 Backlog MCP サーバーや Backlog API での取得は禁止されている。「取ってきましょうか」と提案してもいけない。手動コピペ前提で話す。
 
-貼ってもらった内容は、原文を捨てずに `親課題.md` へ整形して書き込む。
+貼ってもらったら、件名と本文に分け、本文を整形して `pasteCommand` の標準入力に渡す。`<件名>` は実際の件名に置き換える。原文の内容を捨てない。
 
-### 1B. `.claude/<課題キー>/` がある場合
+```bash
+node ".../assign.js" parent PP-1234 --title "件名" <<'EOF'
+（整形した本文）
+EOF
+```
+
+スクリプトは `親課題.md` が雛形のままのときだけ書き込む。記入済みなら拒否されるので、そのときは「補足・関連」に追記する。
+
+書き込んだら（`next: propose`）、`親課題.md` から妥当な着手点を 1 つ提案する。
+
+### 1C. 前回の続きをまとめる
 
 配下のファイルを読む。`CLAUDE.md`（リポジトリ直下・`.claude/`・`~/.claude/`）はセッション開始時に自動で読み込まれているので、重複して読み直さない。
 
@@ -96,6 +100,8 @@ Backlog MCP サーバーや Backlog API での取得は禁止されている。�
 3. <同>
 ```
 
+ブランチと未コミットの変更の行は、`branch` と `dirty` の値をそのまま使う。
+
 次候補は憶測で埋めない。`やること.md` の未実施項目、最新の `進捗.md`、最新の `仕様の調査および要件定義.md` の未決事項、コミット履歴の流れ、書きかけのコードから拾う。拾えるものが無ければ「前回の作業記録がないので課題内容から起こした」と明示した上で、`親課題.md` から妥当な着手点を 1 つ提案する。
 
 ### 2. ブランチの確認
@@ -104,21 +110,19 @@ Backlog MCP サーバーや Backlog API での取得は禁止されている。�
 
 例外として、親課題と子課題をまとめて扱う場合に `PP-1234_PP-1235`（親_子）のような複合名がある。担当者が子課題ごとに分かれるケースで使われる。スクリプトはこの形も拾う。
 
-`branchAction` が `none` なら作業できる状態なので何も聞かない。それ以外は `branchQuestion` を `AskUserQuestion` で聞く。
+`branchAction` が `none` なら作業できる状態なので何も聞かない。それ以外は `branchQuestion` を聞き、選ばれた選択肢の `run` を実行する。
 
-| `branchAction` | 状況 | 選ばれたときの操作 |
-|---|---|---|
-| `ask-switch` | 課題キーを含むブランチが 1 つある | `git switch <ブランチ>` |
-| `ask-choose` | 複合名などで複数ある | 選ばれたブランチに `git switch` |
-| `ask-create-branch` | どこにも無い | `git fetch origin hotfix && git switch -c PP-1234 --no-track origin/hotfix` |
+| `branchAction` | 状況 |
+|---|---|
+| `ask-switch` | 課題キーを含むブランチが 1 つある |
+| `ask-choose` | 複合名などで複数ある |
+| `ask-create-branch` | どこにも無い。`run` が `origin/hotfix` から `--no-track` で作成する |
 
-ブランチ名も分岐元も決まっているので、どちらも聞かない。ユーザーから別の分岐元を指定されたときだけそれに従う。`--no-track` の理由は下記。
+未コミットの変更があると、スクリプトは「stash して〜」の選択肢を加える（`ask-choose` は選択肢の数の上限のため加えない）。stash は `.claude/` を対象から外す。
 
 親課題・子課題をまとめる意図がユーザーから示されたときだけ `PP-1234_PP-1235` 形式を新規作成の候補にする。こちらから複合名を持ち出さない。
 
-**未コミットの変更があるときは黙って切り替えない。** `dirty.count` が 1 以上なら、`branchQuestion` に「stash して切り替える」が入っている。切り替えで作業が消える操作を無確認で実行するのは避ける。
-
-### 上流を付けない理由
+## 上流を付けない理由
 
 `git switch -c PP-1234 origin/hotfix` と書くと、分岐元がリモート追跡ブランチであるため
 `branch.autoSetupMerge`（既定値 `true`）が働き、**上流が `origin/hotfix` として記録される**。
@@ -142,12 +146,9 @@ cda7c434 PP-1234@{1}: branch: Created from origin/hotfix
 push 側は `push.default` の既定値 `simple` が上流名の不一致を検出して拒否するため、
 hotfix に push されることはないが、毎回エラーで止まる。
 
-**すでに付いてしまっている場合の直し方**（PP-1234 に独自コミットがあっても安全。ローカル設定を消すだけ）:
+スクリプトの `run` は、課題ブランチを常に `--no-track` で作成する。
 
-```bash
-git branch --unset-upstream PP-1234
-git branch -vv | grep PP-1234   # 角括弧の上流表記が消えていれば正常
-```
+**すでに付いてしまっている場合**は、`status` が検出して `upstreamQuestion` を出す。「外す」の `run` が `git branch --unset-upstream PP-1234` を実行する（PP-1234 に独自コミットがあっても安全。ローカル設定を消すだけ）。
 
 なお `branch.autoSetupMerge simple` を設定済み
 
