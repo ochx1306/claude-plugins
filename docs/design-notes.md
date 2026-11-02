@@ -110,7 +110,7 @@ plugins/code-comments/
 - `/backlog:assign [課題キー]` で起動する。入口の判定と git の操作は `skills/assign/scripts/assign.js` が行い、AI は質問・整形・要約だけを行う。
 - 会社固有の値（他リポジトリの検索先）は `~/.claude/backlog.json` に置く。このリポジトリは公開のため。
 
-### 課題ディレクトリの新しい構成（相談中・未実装）
+### 課題ディレクトリの構成
 
 ```
 .claude/PP-1234/
@@ -146,9 +146,14 @@ plugins/code-comments/
   - サマリーの各ファイルは、Backlog API で書き込む（API キーの利用は許可されている。MCP は書き込みに使えない）
   - API キーとスペースの URL は公開リポジトリに置かない。環境変数か `~/.claude/backlog.json` から読む
 
+### 実装済み
+
+- `assign.js`: `status`（新旧の構成を判定）、`requirement`（「## 要求」の取り出し）、`unit`（くくりの作成）、`file`（段階のファイルの作成）
+- 閉じたくくりへの Edit / Write を拒否する PreToolUse hook（`hooks/hooks.json` → `guard-closed-unit.js`）。Bash での書き換えは防げない
+- 古い構成（`親課題.md` と `ver.X`）の課題も読める。移行は頼まれたときだけ
+
 ### 未決事項
 
-- Backlog API で書き込むスクリプト（どのファイルをどの課題のどこに書くか、API キーの置き場所）
-- 閉じたくくりの書き換えを防ぐ方法（PreToolUse hook で Edit / Write を拒否する案）
-- `assign.js status` を新しい構成に合わせる（サマリーと最新のくくりを読み、次の作業を決める）
-- assign の SKILL.md は「MCP や API での取得は禁止、手動でコピペ」の前提のまま。MCP での取得に書き換える
+- Backlog API で書き込むスクリプト（どのファイルをどの課題のどこに書くか、API キーの置き場所）。書き込む前に差分を見せて確認する
+- くくりとサマリーのどちらにどの段階のファイルを置くか（使いながら決める）
+- Backlog の本文が Backlog 記法（`**` の見出し）の課題があるか。今は Markdown の `##` だけを見出しとして扱う

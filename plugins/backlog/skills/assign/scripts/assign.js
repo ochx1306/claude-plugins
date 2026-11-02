@@ -3,13 +3,17 @@
 //   node assign.js status [課題キー]
 //     状態を集め、次の手順と AskUserQuestion の選択肢を JSON で出力する
 //   node assign.js start <課題キー> [--dir-only] [--stash] [--branch <ブランチ>]
-//     課題ディレクトリと親課題.md の雛形を作り、ブランチを準備する
+//     課題ディレクトリを作り、ブランチを準備する
 //   node assign.js branch <課題キー> [--stash] [--branch <ブランチ>]
 //     ブランチに切り替える。なければ origin/hotfix から作成する
 //   node assign.js unset-upstream <課題キー>
 //     課題ブランチの上流を外す
-//   node assign.js parent <課題キー> --title <件名>
-//     標準入力の課題本文を親課題.md に書き込む
+//   node assign.js requirement <課題キー> [--section <見出し>]
+//     標準入力の親課題の本文から「## 要求」を取り出し、00_サマリー/要求.md に書き込む
+//   node assign.js unit <課題キー> <くくりの名前>
+//     次の番号のくくりを作り、それまでのくくりを閉じる
+//   node assign.js file <課題キー> <段階> [--summary]
+//     最新のくくり（--summary ならサマリー）に段階のファイルを作る
 //   node assign.js find <課題キー>
 //     ~/.claude/backlog.json の repos から、同じ課題ディレクトリがあるリポジトリを探す
 // SKILL.md の !`...` から呼ばれ、失敗するとスキルの起動ごと止まるため、終了コードは常に 0 にする。
@@ -17,13 +21,15 @@ const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { SUMMARY_DIR, STAGES, SUMMARY_ONLY, TEMPLATES, listUnits, inspectIssueDir } = require('./lib/issue');
 
 // \b は _ を単語の文字として扱い、PP-1234_PP-1235 の境界を認識しないため、前後を文字クラスで判定する
 const KEY_PATTERN = /(?<![A-Za-z0-9])[A-Z][A-Z0-9_]*-[0-9]+(?![0-9])/g;
 const NOT_KEY_PREFIXES = ['UTF', 'SHA', 'ISO', 'COVID', 'MD', 'RFC', 'TLS', 'SSL', 'HTTP', 'IPV'];
-const CATEGORIES = ['進捗.md', '仕様の調査および要件定義.md', '実装.md', 'AIレビュー.md', '第三者テスト.md'];
-const TEMPLATE_MARK = '（Backlog からコピペ）';
 const BASE_BRANCH = 'hotfix';
+const REQUIREMENT_SECTION = '要求';
+// 親課題には Backlog 側で更新する「## 進捗」もあり、要求の候補にはならないため、見出しの選択肢から除く
+const NOT_REQUIREMENT_SECTIONS = ['進捗'];
 
 /**
  * ~/.claude/backlog.json の設定を返す
@@ -90,50 +96,6 @@ function findKeys(text) {
  */
 function branchHasKey(branch, key) {
   return new RegExp(`(^|[_/])${key}([_/]|$)`).test(branch);
-}
-
-/**
- * ver.X フォルダを番号の大きい順に並べるための比較結果を返す
- *
- * @param {string} a
- * @param {string} b
- * @returns {number} a が新しければ負の数
- */
-function compareVersionDesc(a, b) {
-  const pa = a.slice(4).split('.').map(Number);
-  const pb = b.slice(4).split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pb[i] || 0) - (pa[i] || 0);
-    if (d !== 0) return d;
-  }
-  return 0;
-}
-
-/**
- * 課題ディレクトリの状態と、カテゴリごとの最新ファイルを返す
- *
- * @param {string} dir
- * @returns {{path: string, state: 'missing'|'empty'|'template'|'ready', files: Object<string, string>}}
- */
-function inspectIssueDir(dir) {
-  if (!fs.existsSync(dir)) return { path: dir, state: 'missing', files: {} };
-  const entries = fs.readdirSync(dir);
-  if (entries.length === 0) return { path: dir, state: 'empty', files: {} };
-
-  const files = {};
-  for (const name of ['親課題.md', 'やること.md']) {
-    if (entries.includes(name)) files[name] = path.join(dir, name);
-  }
-  // カテゴリごとに版数を持たないため、番号の大きい ver.X から遡って最初に見つかったものを最新とする
-  const versions = entries.filter((e) => /^ver\.\d+(\.\d+)*$/.test(e)).sort(compareVersionDesc);
-  for (const category of CATEGORIES) {
-    const ver = versions.find((v) => fs.existsSync(path.join(dir, v, category)));
-    if (ver) files[category] = path.join(dir, ver, category);
-  }
-
-  const parent = files['親課題.md'] && fs.readFileSync(files['親課題.md'], 'utf8');
-  const state = !parent || parent.includes(TEMPLATE_MARK) ? 'template' : 'ready';
-  return { path: dir, state, files };
 }
 
 /**
@@ -329,13 +291,15 @@ function status(arg) {
       .map((x) => x.d);
   }
 
-  if (result.issueDir.state === 'missing') {
+  const state = result.issueDir.state;
+  if (state === 'missing') {
     result.next = 'ask-create';
     result.question = createQuestion(key, result.repo.name, candidates[0] || null, result.dirty.count);
     return result;
   }
-  result.next = result.issueDir.state === 'ready' ? 'summarize' : 'ask-paste';
-  if (result.next === 'ask-paste') result.pasteCommand = runCommand('parent', key, '--title', '<件名>');
+  result.next = { legacy: 'summarize-legacy', 'no-requirement': 'fetch-requirement', ready: 'summarize' }[state];
+  if (state === 'no-requirement') result.requirementCommand = runCommand('requirement', key);
+  if (state === 'ready' && !result.issueDir.latestUnit) result.next = 'propose-unit';
   if (result.branch.onIssueBranch) {
     result.branchAction = 'none';
   } else {
@@ -402,47 +366,144 @@ function start(root, key, opts) {
     if (!r.ok) return { ok: false, done, message: r.message };
   }
 
-  const dir = path.join(root, '.claude', key);
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, '親課題.md');
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, `# ${key} xxxx\n\n## 課題内容\n\n${TEMPLATE_MARK}\n\n## 補足・関連\n\n-\n`);
-    done.push(`.claude/${key}/親課題.md を雛形で作成`);
-  }
-
+  fs.mkdirSync(path.join(root, '.claude', key, SUMMARY_DIR), { recursive: true });
+  done.push(`.claude/${key}/${SUMMARY_DIR}/ を作成`);
   const switched = opts.dirOnly ? 'ました' : `、${git(['symbolic-ref', '--short', 'HEAD'], root)} ブランチに切り替えました`;
   return {
     ok: true,
     done,
-    next: 'ask-paste',
-    pasteCommand: runCommand('parent', key, '--title', '<件名>'),
-    message: `\`.claude/${key}/\` を作成し${switched}。Backlog の課題ページを開いて、「課題キーとタイトル」と「本文」を貼ってください。 \`親課題.md\` に保存します。`,
+    next: 'fetch-requirement',
+    requirementCommand: runCommand('requirement', key),
+    message: `\`.claude/${key}/\` を作成し${switched}。`,
   };
 }
 
 /**
- * 標準入力の課題本文から親課題.md を生成する
+ * Markdown の本文から、指定した見出しのセクションの中身を返す
  *
- * 親課題.md は git の追跡対象外で壊すと復元できないため、雛形のままのときだけ書き込み、記入済みなら上書きしない。
+ * @param {string} body
+ * @param {string} section 見出しの文字列（## を除く）
+ * @returns {string|null} 見出しがないときは null
+ */
+function extractSection(body, section) {
+  const lines = body.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.findIndex((l) => /^##\s+/.test(l) && l.replace(/^##\s+/, '').trim() === section);
+  if (start === -1) return null;
+  // 同じ階層か上の階層の見出しが来たところで、セクションが終わる
+  const end = lines.findIndex((l, i) => i > start && /^#{1,2}\s+/.test(l));
+  return lines.slice(start + 1, end === -1 ? undefined : end).join('\n').trim();
+}
+
+/**
+ * requirement サブコマンドの結果を返す
+ *
+ * MCP で取得した本文を渡し直さずに見出しを選び直せるよう、本文は一時ディレクトリに保存して使い回す。
  *
  * @param {string} root
  * @param {string} key
- * @param {string|undefined} title 課題の件名
- * @param {string} body 課題の本文
+ * @param {string|undefined} section 取り出す見出し。省略時は「要求」
+ * @param {string} stdin
  * @returns {object}
  */
-function writeParent(root, key, title, body) {
-  if (!title) return { ok: false, message: '--title で件名を指定してください' };
-  if (!body.trim()) return { ok: false, message: '標準入力に課題の本文がありません' };
+function requirement(root, key, section, stdin) {
+  const cache = path.join(os.tmpdir(), 'backlog-assign', `${key}.md`);
+  let body = stdin;
+  if (body.trim()) {
+    fs.mkdirSync(path.dirname(cache), { recursive: true });
+    fs.writeFileSync(cache, body);
+  } else if (fs.existsSync(cache)) {
+    body = fs.readFileSync(cache, 'utf8');
+  } else {
+    return { ok: false, message: '標準入力に親課題の本文がありません' };
+  }
 
-  const dir = path.join(root, '.claude', key);
-  const file = path.join(dir, '親課題.md');
-  if (fs.existsSync(file) && !fs.readFileSync(file, 'utf8').includes(TEMPLATE_MARK)) {
-    return { ok: false, message: '親課題.md は記入済みのため上書きしません。追記するときは「補足・関連」に書き足してください' };
+  const name = section || REQUIREMENT_SECTION;
+  const content = extractSection(body, name);
+  if (content === null) {
+    const headings = body
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .filter((l) => /^##\s+/.test(l))
+      .map((l) => l.replace(/^##\s+/, '').trim())
+      .filter((h) => !NOT_REQUIREMENT_SECTIONS.includes(h));
+    // 今の課題は「## 要件」を使っていることが多いため、要件を含む見出しを先に並べる
+    headings.sort((a, b) => Number(b.includes('要件')) - Number(a.includes('要件')));
+    return {
+      ok: false,
+      next: 'ask-section',
+      message: `親課題に「## ${name}」がありません`,
+      question: {
+        question: `${key} の親課題に「## ${name}」がありません。どのセクションを要求として使いますか？`,
+        options: [
+          ...headings.slice(0, 3).map((h) => ({ label: h, description: `「## ${h}」を要求として取り込む`, run: runCommand('requirement', key, '--section', h) })),
+          { label: '取り込まない', description: '要求.md を作らない', run: null },
+        ],
+      },
+    };
+  }
+
+  const dir = path.join(root, '.claude', key, SUMMARY_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '要求.md'), `${content}\n`);
+  return { ok: true, done: [`親課題の「## ${name}」を .claude/${key}/${SUMMARY_DIR}/要求.md に書き込み`], next: 'propose-unit' };
+}
+
+/**
+ * unit サブコマンドの結果を返す
+ *
+ * @param {string} root
+ * @param {string} key
+ * @param {string} name くくりの名前
+ * @returns {object}
+ */
+function unit(root, key, name) {
+  // Windows のファイル名に使えない文字と空白を _ にする
+  const safe = (name || '').trim().replace(/[\\/:*?"<>|\s]+/g, '_');
+  if (!safe) return { ok: false, message: 'くくりの名前を指定してください' };
+
+  const issueDir = path.join(root, '.claude', key);
+  const units = listUnits(issueDir);
+  const previous = units[units.length - 1] || null;
+  const number = (previous ? previous.number : 0) + 1;
+  const dirName = `${String(number).padStart(2, '0')}_${safe}`;
+  fs.mkdirSync(path.join(issueDir, dirName), { recursive: true });
+
+  return {
+    ok: true,
+    done: [`.claude/${key}/${dirName}/ を作成`, ...(previous ? [`${previous.name} を閉じた（以後は書き換え禁止）`] : [])],
+    unit: dirName,
+    closed: previous && previous.name,
+    next: previous ? 'reflect-summary' : 'write-unit',
+  };
+}
+
+/**
+ * file サブコマンドの結果を返す
+ *
+ * @param {string} root
+ * @param {string} key
+ * @param {string} stage 段階名
+ * @param {boolean} summary true ならサマリーに作る
+ * @returns {object}
+ */
+function stageFile(root, key, stage, summary) {
+  const allowed = summary ? [...STAGES, ...SUMMARY_ONLY] : STAGES;
+  if (!allowed.includes(stage)) return { ok: false, message: `「${stage}」は段階名ではありません。使える段階: ${allowed.join(' / ')}` };
+
+  const issueDir = path.join(root, '.claude', key);
+  let dir;
+  if (summary) {
+    dir = path.join(issueDir, SUMMARY_DIR);
+  } else {
+    const units = listUnits(issueDir);
+    if (units.length === 0) return { ok: false, message: 'くくりがありません。先に unit でくくりを作ってください' };
+    dir = units[units.length - 1].path;
   }
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(file, `# ${key} ${title}\n\n## 課題内容\n\n${body.trim()}\n\n## 補足・関連\n\n-\n`);
-  return { ok: true, done: [`.claude/${key}/親課題.md に書き込み`], next: 'propose' };
+  const file = path.join(dir, `${stage}.md`);
+  if (fs.existsSync(file)) return { ok: true, path: file, created: false };
+  fs.writeFileSync(file, TEMPLATES[stage] || '');
+  return { ok: true, path: file, created: true };
 }
 
 /**
@@ -463,7 +524,7 @@ function find(key) {
  * コマンドライン引数を位置引数とオプションに分けて返す
  *
  * @param {string[]} argv
- * @returns {{positional: string[], opts: {branch?: string, title?: string, stash?: boolean, dirOnly?: boolean}}}
+ * @returns {{positional: string[], opts: {branch?: string, section?: string, stash?: boolean, dirOnly?: boolean, summary?: boolean}}}
  */
 function parseArgs(argv) {
   const positional = [];
@@ -472,11 +533,26 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--stash') opts.stash = true;
     else if (a === '--dir-only') opts.dirOnly = true;
+    else if (a === '--summary') opts.summary = true;
     else if (a === '--branch') opts.branch = argv[++i];
-    else if (a === '--title') opts.title = argv[++i];
+    else if (a === '--section') opts.section = argv[++i];
     else positional.push(a.trim());
   }
   return { positional, opts };
+}
+
+/**
+ * 標準入力の内容を返す
+ *
+ * @returns {string} 標準入力がないときは空文字列
+ */
+function readStdin() {
+  // 選択肢の run から呼ばれたときは標準入力がなく、環境によっては読み込みが例外になる
+  try {
+    return fs.readFileSync(0, 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -498,7 +574,9 @@ function main(command, argv) {
 
   if (command === 'start') return start(root, key, opts);
   if (command === 'branch') return switchBranch(root, key, opts);
-  if (command === 'parent') return writeParent(root, key, opts.title, fs.readFileSync(0, 'utf8'));
+  if (command === 'requirement') return requirement(root, key, opts.section, readStdin());
+  if (command === 'unit') return unit(root, key, positional.slice(1).join(' '));
+  if (command === 'file') return stageFile(root, key, positional[1], Boolean(opts.summary));
   if (command === 'unset-upstream') {
     const r = gitRun(['branch', '--unset-upstream', key], root);
     return r.ok ? { ok: true, done: [`git branch --unset-upstream ${key}`] } : { ok: false, message: r.output };
