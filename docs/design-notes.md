@@ -108,7 +108,9 @@ plugins/code-comments/
 ## プラグイン: `backlog`（会社用）
 
 - `/backlog:assign [課題キー]` で起動する。入口の判定と git の操作は `skills/assign/scripts/assign.js` が行い、AI は質問・整形・要約だけを行う。
-- 会社固有の値（他リポジトリの検索先）は `~/.claude/backlog.json` に置く。このリポジトリは公開のため。
+- 会社固有の値は `~/.claude/backlog.json` に置く。このリポジトリは公開のため。
+  - `repos`: 他リポジトリの検索先
+  - `baseBranch`: 課題ブランチの分岐元（会社は `hotfix`）。未設定ならリポジトリの既定のブランチ
 
 ### 課題ディレクトリの構成
 

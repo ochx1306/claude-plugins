@@ -5,7 +5,7 @@
 //   node assign.js start <課題キー> [--dir-only] [--stash] [--branch <ブランチ>]
 //     課題ディレクトリを作り、ブランチを準備する
 //   node assign.js branch <課題キー> [--stash] [--branch <ブランチ>]
-//     ブランチに切り替える。なければ origin/hotfix から作成する
+//     ブランチに切り替える。なければ分岐元から作成する
 //   node assign.js unset-upstream <課題キー>
 //     課題ブランチの上流を外す
 //   node assign.js requirement <課題キー> [--section <見出し>]
@@ -26,7 +26,6 @@ const { SUMMARY_DIR, STAGES, SUMMARY_ONLY, TEMPLATES, listUnits, inspectIssueDir
 // \b は _ を単語の文字として扱い、PP-1234_PP-1235 の境界を認識しないため、前後を文字クラスで判定する
 const KEY_PATTERN = /(?<![A-Za-z0-9])[A-Z][A-Z0-9_]*-[0-9]+(?![0-9])/g;
 const NOT_KEY_PREFIXES = ['UTF', 'SHA', 'ISO', 'COVID', 'MD', 'RFC', 'TLS', 'SSL', 'HTTP', 'IPV'];
-const BASE_BRANCH = 'hotfix';
 const REQUIREMENT_SECTION = '要求';
 // 親課題には Backlog 側で更新する「## 進捗」もあり、要求の候補にはならないため、見出しの選択肢から除く
 const NOT_REQUIREMENT_SECTIONS = ['進捗'];
@@ -36,7 +35,7 @@ const NOT_REQUIREMENT_SECTIONS = ['進捗'];
  *
  * 会社のリポジトリのパスは公開リポジトリに置けないため、プラグインの外の設定ファイルから読む。
  *
- * @returns {{repos: string[]}}
+ * @returns {{repos: string[], baseBranch?: string}}
  */
 function loadConfig() {
   const defaults = { repos: [] };
@@ -73,6 +72,21 @@ function git(args, cwd) {
 function gitRun(args, cwd) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
   return { ok: r.status === 0, output: `${r.stdout || ''}${r.stderr || ''}`.trim() };
+}
+
+/**
+ * 課題ブランチの分岐元のブランチ名を返す
+ *
+ * 分岐元は会社の運用ルールのため、~/.claude/backlog.json の baseBranch で決める。
+ *
+ * @param {string} root
+ * @returns {string} 未設定なら origin/HEAD が指すブランチ（取れなければ main）
+ */
+function resolveBaseBranch(root) {
+  const { baseBranch } = loadConfig();
+  if (baseBranch) return baseBranch;
+  const head = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], root);
+  return head ? head.replace(/^origin\//, '') : 'main';
 }
 
 /**
@@ -134,9 +148,10 @@ function runCommand(...args) {
  * @param {string} repoName
  * @param {string|null} existingBranch 課題キーを含む既存ブランチ
  * @param {number} dirtyCount 未コミットの変更の数
+ * @param {string} base 分岐元のブランチ
  * @returns {{question: string, options: {label: string, description: string, run: string|null}[]}}
  */
-function createQuestion(key, repoName, existingBranch, dirtyCount) {
+function createQuestion(key, repoName, existingBranch, dirtyCount, base) {
   // 未着手の課題に対する手元の変更は別課題のものである可能性が高いため、未コミットの変更があれば退避を既定にする
   const stash = dirtyCount > 0;
   const dirtyNote = stash ? `未コミットの変更が ${dirtyCount} 件あります（別課題の変更の可能性があります）。` : '';
@@ -144,7 +159,7 @@ function createQuestion(key, repoName, existingBranch, dirtyCount) {
   const stashArgs = stash ? ['--stash'] : [];
   const target = existingBranch
     ? `${existingBranch} に切り替える`
-    : `origin/${BASE_BRANCH} から ${key} を作成してチェックアウト`;
+    : `origin/${base} から ${key} を作成してチェックアウト`;
 
   return {
     question: existingBranch
@@ -174,9 +189,10 @@ function createQuestion(key, repoName, existingBranch, dirtyCount) {
  * @param {string} current 現在のブランチ
  * @param {string[]} candidates 課題キーを含むブランチ
  * @param {number} dirtyCount 未コミットの変更の数
+ * @param {string} base 分岐元のブランチ
  * @returns {{action: string, question: string, options: {label: string, description: string, run: string|null}[]}}
  */
-function branchQuestion(key, current, candidates, dirtyCount) {
+function branchQuestion(key, current, candidates, dirtyCount, base) {
   const dirtyNote = dirtyCount > 0 ? `未コミットの変更が ${dirtyCount} 件あります。` : '';
   const stay = { label: '今のブランチのまま', description: `${current} で作業する`, run: null };
   const withStash = (option) =>
@@ -187,9 +203,9 @@ function branchQuestion(key, current, candidates, dirtyCount) {
   if (candidates.length === 0) {
     return {
       action: 'ask-create-branch',
-      question: `${dirtyNote}${key} ブランチがありません。origin/${BASE_BRANCH} から作成しますか？`,
+      question: `${dirtyNote}${key} ブランチがありません。origin/${base} から作成しますか？`,
       options: [
-        ...withStash({ label: '作成して切り替える', description: `origin/${BASE_BRANCH} から ${key} を作成する`, run: runCommand('branch', key) }),
+        ...withStash({ label: '作成して切り替える', description: `origin/${base} から ${key} を作成する`, run: runCommand('branch', key) }),
         stay,
       ],
     };
@@ -253,6 +269,7 @@ function status(arg) {
   // リモートにだけあるブランチも git switch で同名のローカルブランチになるため、候補に含める
   const candidates = [...new Set([...localMatches, ...remoteMatches])];
   Object.assign(result.branch, {
+    base: resolveBaseBranch(root),
     onIssueBranch: branchHasKey(current, key),
     local: localMatches,
     remoteOnly: remoteMatches.filter((b) => !localMatches.includes(b)),
@@ -294,7 +311,7 @@ function status(arg) {
   const state = result.issueDir.state;
   if (state === 'missing') {
     result.next = 'ask-create';
-    result.question = createQuestion(key, result.repo.name, candidates[0] || null, result.dirty.count);
+    result.question = createQuestion(key, result.repo.name, candidates[0] || null, result.dirty.count, result.branch.base);
     return result;
   }
   result.next = { legacy: 'summarize-legacy', 'no-requirement': 'fetch-requirement', ready: 'summarize' }[state];
@@ -303,7 +320,7 @@ function status(arg) {
   if (result.branch.onIssueBranch) {
     result.branchAction = 'none';
   } else {
-    const { action, ...question } = branchQuestion(key, current, candidates, result.dirty.count);
+    const { action, ...question } = branchQuestion(key, current, candidates, result.dirty.count, result.branch.base);
     result.branchAction = action;
     result.branchQuestion = question;
   }
@@ -313,7 +330,7 @@ function status(arg) {
 /**
  * 課題ブランチへの切り替えの結果を返す
  *
- * ブランチがなければ origin/hotfix から作成する。
+ * ブランチがなければ分岐元から作成する。
  *
  * @param {string} root
  * @param {string} key
@@ -339,14 +356,15 @@ function switchBranch(root, key, opts) {
   }
   if (target !== key) return { ok: false, done, message: `ブランチ ${target} がありません` };
 
-  // 手元の origin/hotfix が古いまま分岐すると差分が余計に乗るため、fetch してから分岐する
-  const fetch = gitRun(['fetch', 'origin', BASE_BRANCH], root);
-  if (!fetch.ok) return { ok: false, done, message: `git fetch origin ${BASE_BRANCH} に失敗しました: ${fetch.output}` };
-  done.push(`git fetch origin ${BASE_BRANCH}`);
-  // 上流が origin/hotfix になると git pull で hotfix の変更が混ざるため、--no-track で上流を付けない
-  const create = gitRun(['switch', '-c', key, '--no-track', `origin/${BASE_BRANCH}`], root);
+  const base = resolveBaseBranch(root);
+  // 手元の origin の分岐元が古いまま分岐すると差分が余計に乗るため、fetch してから分岐する
+  const fetch = gitRun(['fetch', 'origin', base], root);
+  if (!fetch.ok) return { ok: false, done, message: `git fetch origin ${base} に失敗しました: ${fetch.output}` };
+  done.push(`git fetch origin ${base}`);
+  // 上流が分岐元になると git pull で分岐元の変更が混ざるため、--no-track で上流を付けない
+  const create = gitRun(['switch', '-c', key, '--no-track', `origin/${base}`], root);
   if (!create.ok) return { ok: false, done, message: `${key} の作成に失敗しました: ${create.output}` };
-  done.push(`git switch -c ${key} --no-track origin/${BASE_BRANCH}`);
+  done.push(`git switch -c ${key} --no-track origin/${base}`);
   return { ok: true, done };
 }
 

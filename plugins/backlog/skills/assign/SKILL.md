@@ -129,7 +129,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/assign.js" file PP-1234 要求
 
 ### 2. ブランチの確認
 
-ブランチ名は課題キーそのもの（`PP-1234`）。prefix は付けない。分岐元は `origin/hotfix`。
+ブランチ名は課題キーそのもの（`PP-1234`）。prefix は付けない。分岐元は `branch.base`（`~/.claude/backlog.json` の `baseBranch`。未設定ならリポジトリの既定のブランチ）。
 
 例外として、親課題と子課題をまとめて扱う場合に `PP-1234_PP-1235`（親_子）のような複合名がある。担当者が子課題ごとに分かれるケースで使われる。スクリプトはこの形も拾う。
 
@@ -139,7 +139,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/assign.js" file PP-1234 要求
 |---|---|
 | `ask-switch` | 課題キーを含むブランチが 1 つある |
 | `ask-choose` | 複合名などで複数ある |
-| `ask-create-branch` | どこにも無い。`run` が `origin/hotfix` から `--no-track` で作成する |
+| `ask-create-branch` | どこにも無い。`run` が `origin/<分岐元>` から `--no-track` で作成する |
 
 未コミットの変更があると、スクリプトは「stash して〜」の選択肢を加える（`ask-choose` は選択肢の数の上限のため加えない）。stash は `.claude/` を対象から外す。
 
@@ -227,6 +227,8 @@ node "${CLAUDE_SKILL_DIR}/scripts/assign.js" file PP-1234 要求
 
 ## 上流を付けない理由
 
+以下は分岐元が `hotfix` の場合の例。
+
 `git switch -c PP-1234 origin/hotfix` と書くと、分岐元がリモート追跡ブランチであるため
 `branch.autoSetupMerge`（既定値 `true`）が働き、**上流が `origin/hotfix` として記録される**。
 
@@ -269,8 +271,10 @@ hotfix に push されることはないが、毎回エラーで止まる。
 
 ```json
 {
-  "repos": ["C:/path/to/repo1", "C:/path/to/repo2"]
+  "repos": ["C:/path/to/repo1", "C:/path/to/repo2"],
+  "baseBranch": "hotfix"
 }
 ```
 
-`repos` は「他リポジトリを探す」で検索するリポジトリのルート。
+- `repos`: 「他リポジトリを探す」で検索するリポジトリのルート
+- `baseBranch`: 課題ブランチの分岐元。未設定ならリポジトリの既定のブランチ（`origin/HEAD` が指すブランチ）
