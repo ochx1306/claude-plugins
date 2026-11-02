@@ -10,10 +10,10 @@
 //     課題ブランチの上流を外す
 //   node assign.js requirement <課題キー> [--section <見出し>]
 //     標準入力の親課題の本文から「## 要求」を取り出し、00_サマリー/要求.md に書き込む
-//   node assign.js unit <課題キー> <くくりの名前>
-//     次の番号のくくりを作り、それまでのくくりを閉じる
-//   node assign.js file <課題キー> <段階> [--summary]
-//     最新のくくり（--summary ならサマリー）に段階のファイルを作る
+//   node assign.js unit <課題キー> <ユニットの名前>
+//     次の番号のユニットを作り、それまでのユニットを閉じる
+//   node assign.js file <課題キー> <ステージ> [--summary]
+//     最新のユニット（--summary ならサマリー）にステージのファイルを作る
 //   node assign.js find <課題キー>
 //     ~/.claude/backlog.json の repos から、同じ課題ディレクトリがあるリポジトリを探す
 // SKILL.md の !`...` から呼ばれ、失敗するとスキルの起動ごと止まるため、終了コードは常に 0 にする。
@@ -453,13 +453,13 @@ function requirement(root, key, section, stdin) {
  *
  * @param {string} root
  * @param {string} key
- * @param {string} name くくりの名前
+ * @param {string} name ユニットの名前
  * @returns {object}
  */
 function unit(root, key, name) {
   // Windows のファイル名に使えない文字と空白を _ にする
   const safe = (name || '').trim().replace(/[\\/:*?"<>|\s]+/g, '_');
-  if (!safe) return { ok: false, message: 'くくりの名前を指定してください' };
+  if (!safe) return { ok: false, message: 'ユニットの名前を指定してください' };
 
   const issueDir = path.join(root, '.claude', key);
   const units = listUnits(issueDir);
@@ -482,13 +482,13 @@ function unit(root, key, name) {
  *
  * @param {string} root
  * @param {string} key
- * @param {string} stage 段階名
+ * @param {string} stage ステージ名
  * @param {boolean} summary true ならサマリーに作る
  * @returns {object}
  */
 function stageFile(root, key, stage, summary) {
   const allowed = summary ? [...STAGES, ...SUMMARY_ONLY] : STAGES;
-  if (!allowed.includes(stage)) return { ok: false, message: `「${stage}」は段階名ではありません。使える段階: ${allowed.join(' / ')}` };
+  if (!allowed.includes(stage)) return { ok: false, message: `「${stage}」はステージ名ではありません。使えるステージ: ${allowed.join(' / ')}` };
 
   const issueDir = path.join(root, '.claude', key);
   let dir;
@@ -496,7 +496,7 @@ function stageFile(root, key, stage, summary) {
     dir = path.join(issueDir, SUMMARY_DIR);
   } else {
     const units = listUnits(issueDir);
-    if (units.length === 0) return { ok: false, message: 'くくりがありません。先に unit でくくりを作ってください' };
+    if (units.length === 0) return { ok: false, message: 'ユニットがありません。先に unit でユニットを作ってください' };
     dir = units[units.length - 1].path;
   }
   fs.mkdirSync(dir, { recursive: true });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PreToolUse(Edit|MultiEdit|Write|NotebookEdit) hook。閉じたくくり（最新でないくくり）のファイルの書き換えを拒否する。
+// PreToolUse(Edit|MultiEdit|Write|NotebookEdit) hook。閉じたユニット（最新でないユニット）のファイルの書き換えを拒否する。
 const fs = require('fs');
 const { closedUnitOf } = require('./lib/issue');
 
@@ -21,7 +21,7 @@ process.stdout.write(
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `${unit} は閉じたくくりのため書き換えられない。書き換えてよいのは最新のくくり ${latest} とサマリーだけ。直す必要があれば、最新のくくりに書く`,
+      permissionDecisionReason: `${unit} は閉じたユニットのため書き換えられない。書き換えてよいのは最新のユニット ${latest} とサマリーだけ。直す必要があれば、最新のユニットに書く`,
     },
   })
 );

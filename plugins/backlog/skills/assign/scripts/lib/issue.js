@@ -1,11 +1,11 @@
-// 課題ディレクトリ（.claude/<課題キー>/）の構成を扱う。assign.js と、閉じたくくりを守る hook の両方から使う。
+// 課題ディレクトリ（.claude/<課題キー>/）の構成を扱う。assign.js と、閉じたユニットを守る hook の両方から使う。
 const fs = require('fs');
 const path = require('path');
 
 const SUMMARY_DIR = '00_サマリー';
 const STAGES = ['要求', '調査および要件定義', '実装', 'PR本文', 'AIレビュー', '第三者テスト', '開発者確認', 'リリース後の動作確認'];
 const SUMMARY_ONLY = ['進捗', 'やること'];
-// サマリーへの反映漏れの判定から除くファイル。要求は Backlog から取得し、進捗とやることはくくりと関係なく更新する
+// サマリーへの反映漏れの判定から除くファイル。要求は Backlog から取得し、進捗とやることはユニットと関係なく更新する
 const NOT_REFLECTED = ['要求', ...SUMMARY_ONLY];
 const UNIT_PATTERN = /^(\d{2,})_(.+)$/;
 const TEMPLATES = {
@@ -16,7 +16,7 @@ const TEMPLATES = {
 const LEGACY_CATEGORIES = ['進捗.md', '仕様の調査および要件定義.md', '実装.md', 'AIレビュー.md', '第三者テスト.md'];
 
 /**
- * 課題ディレクトリのくくりを番号の順に返す
+ * 課題ディレクトリのユニットを番号の順に返す
  *
  * @param {string} issueDir
  * @returns {{name: string, number: number, path: string}[]} サマリーは含めない
@@ -33,10 +33,10 @@ function listUnits(issueDir) {
 }
 
 /**
- * フォルダにある段階のファイルと、雛形のままのものを返す
+ * フォルダにあるステージのファイルと、雛形のままのものを返す
  *
  * @param {string} dir
- * @param {string[]} names 対象の段階名
+ * @param {string[]} names 対象のステージ名
  * @returns {{files: Object<string, string>, unfilled: string[], newest: number}} newest はファイルの最終更新日時の最大値
  */
 function inspectStages(dir, names) {
@@ -113,7 +113,7 @@ function inspectIssueDir(dir) {
   const latest = units[units.length - 1] || null;
   const closed = units.slice(0, -1);
 
-  // くくりを閉じたらサマリーに反映するため、閉じたくくりがサマリーより新しければ反映漏れとみなす
+  // ユニットを閉じたらサマリーに反映するため、閉じたユニットがサマリーより新しければ反映漏れとみなす
   const reflected = inspectStages(summaryDir, STAGES.filter((s) => !NOT_REFLECTED.includes(s))).newest;
   const stale = closed.filter((u) => u.newest > reflected).map((u) => u.name);
 
@@ -129,7 +129,7 @@ function inspectIssueDir(dir) {
 }
 
 /**
- * ファイルが閉じたくくりの中にあるかを判定する
+ * ファイルが閉じたユニットの中にあるかを判定する
  *
  * @param {string} filePath
  * @returns {{closed: boolean, unit?: string, latest?: string}}
@@ -137,7 +137,7 @@ function inspectIssueDir(dir) {
 function closedUnitOf(filePath) {
   const parts = path.resolve(filePath).split(path.sep);
   const i = parts.lastIndexOf('.claude');
-  // .claude/<課題キー>/<くくり>/<ファイル> の形のときだけ対象にする
+  // .claude/<課題キー>/<ユニット>/<ファイル> の形のときだけ対象にする
   if (i === -1 || parts.length < i + 4) return { closed: false };
   const unit = parts[i + 2];
   const m = unit.match(UNIT_PATTERN);
