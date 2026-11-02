@@ -14,8 +14,8 @@ function langOf(filePath) {
 /**
  * ソースコード中のコメントを返す
  *
- * 文字列リテラルの中の // や # をコメントと誤認しないよう、引用符の状態を追う。
- * 正規表現リテラルとヒアドキュメントは考慮しないため、まれに誤検出する。
+ * 文字列リテラルと正規表現リテラルの中の // や # をコメントと誤認しないよう、それらを読み飛ばす。
+ * ヒアドキュメントと、行をまたぐ式の途中から始まる正規表現リテラルは考慮しないため、まれに誤検出する。
  *
  * @param {string} source
  * @param {'php'|'js'} lang
@@ -74,6 +74,13 @@ function scanComments(source, lang) {
         lineComments.push({ line, text: raw.slice(j + (c === '#' ? 1 : 2)).trim() });
         break;
       }
+      if (lang === 'js' && c === '/' && startsRegex(raw.slice(0, j))) {
+        const end = regexEnd(raw, j);
+        if (end !== -1) {
+          j = end + 1;
+          continue;
+        }
+      }
       j++;
     }
     if (block) block.lines.push({ line, text: stripStar(raw.slice(textStart)) });
@@ -82,6 +89,45 @@ function scanComments(source, lang) {
   });
 
   return { lineComments, blocks };
+}
+
+/**
+ * / が正規表現リテラルの始まりかを判定する
+ *
+ * 割り算の / と区別するため、直前が演算子・区切り記号・行頭・return などのキーワードのときだけ正規表現とみなす。
+ *
+ * @param {string} before 同じ行の / より前の部分
+ * @returns {boolean}
+ */
+function startsRegex(before) {
+  const trimmed = before.trimEnd();
+  if (trimmed === '') return true;
+  if ('(,=:[!&|?{};+-*%<>~^'.includes(trimmed[trimmed.length - 1])) return true;
+  return /\b(return|typeof|case|in|of|void|delete|throw)$/.test(trimmed);
+}
+
+/**
+ * 正規表現リテラルの終わりの / の位置を返す
+ *
+ * @param {string} raw
+ * @param {number} start 始まりの / の位置
+ * @returns {number} 同じ行で閉じていないときは -1
+ */
+function regexEnd(raw, start) {
+  let inClass = false;
+  for (let k = start + 1; k < raw.length; k++) {
+    const ch = raw[k];
+    if (ch === '\\') {
+      k++;
+    } else if (inClass) {
+      if (ch === ']') inClass = false;
+    } else if (ch === '[') {
+      inClass = true;
+    } else if (ch === '/') {
+      return k;
+    }
+  }
+  return -1;
 }
 
 /**
