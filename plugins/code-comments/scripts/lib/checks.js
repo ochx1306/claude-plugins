@@ -25,6 +25,9 @@ const CODE_LIKE = [
 ];
 const JAPANESE = /[ぁ-んァ-ヶ一-龠]/;
 const DIVIDER = [/^[-=*#/~_+]{3,}$/, /^[-=*#~]{2,}.*[-=*#~]{2,}$/];
+// クラス名だけの括弧は、外すと指す先がわからなくなることがあるため対象にしない。半角の括弧は関数呼び出しと区別するため、直前が識別子のものを除く
+const PAREN_REFERENCE = /(?:（|(?<![\w$])\()[\w$./\\-]*(?:\.(?:php|jsx?|mjs|cjs|tsx?|mts|cts|json|tpl|sql)|(?:::|->)\w+(?:\(\))?|\(\))[）)]/;
+const ALIGNED_TAG = /^@\w+.*\s{2,}\S/;
 
 /**
  * 関数宣言の行番号と名前を返す
@@ -334,7 +337,7 @@ function checkSummary(summary, isFunction) {
 }
 
 /**
- * コメント本文の語彙・経緯語・TODO・コメントアウトされたコード・区切り線の問題を返す
+ * コメント本文の語彙・経緯語・括弧の参照・TODO・コメントアウトされたコード・区切り線・タグのそろえの問題を返す
  *
  * @param {{line: number, text: string}} comment
  * @param {boolean} isDoc docblock の行なら true。docblock はコード例を含むため、コードと区切り線の検査をしない
@@ -354,6 +357,12 @@ function checkCommentText(comment, isDoc) {
   const hit = history.find((re) => re.test(text));
   if (hit) {
     add('history', `変更経緯を書いていないか確認する（「${text.match(hit)[0]}」）。経緯はコミットメッセージや PR 説明に書く`);
+  }
+  if (PAREN_REFERENCE.test(text)) {
+    add('paren-reference', `括弧でパスやメソッド名を添えない（「${text.match(PAREN_REFERENCE)[0]}」）。移動するとコメントだけが古くなる。括弧を外すと指す先がわからなくなるものは残す`);
+  }
+  if (isDoc && ALIGNED_TAG.test(text)) {
+    add('aligned-tag', 'タグの型や名前を空白で縦にそろえない。区切りは半角スペース 1 つにする');
   }
   // 本文中で TODO などの単語を使っているコメントを除くため、先頭にあるものだけを対象にする
   if (/^(TODO|FIXME|XXX)\b/.test(text) &&!/(#\d+|[A-Z][A-Z0-9]+-\d+)/.test(text)) {
