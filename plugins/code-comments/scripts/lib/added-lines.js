@@ -1,30 +1,36 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 
+const MAX_BUFFER = 1024 * 1024 * 1024;
+
 /**
- * git の差分から追加された行番号を返す
+ * git の差分から変更された行番号を返す
  *
  * @param {string} filePath
- * @returns {Set<number>|null} git 管理外・未追跡・コミットがないときは、ファイル全体が新規なので null
+ * @param {string} [from] 比べる元の版
+ * @returns {{added: Set<number>, nearDeletion: Set<number>}|null} nearDeletion は、行を削除しただけの箇所の前後の行。git 管理外・未追跡・コミットがないときは、ファイル全体が新規なので null
  */
-function addedLinesFromGit(filePath) {
+function changedLinesFromGit(filePath, from = 'HEAD') {
   const run = (args) =>
-    execFileSync('git', args, { cwd: path.dirname(filePath), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    execFileSync('git', args, { cwd: path.dirname(filePath), encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'ignore'] });
   let diff;
   try {
     run(['ls-files', '--error-unmatch', path.basename(filePath)]);
-    diff = run(['diff', '-U0', 'HEAD', '--', path.basename(filePath)]);
+    diff = run(['diff', '-U0', from, '--', path.basename(filePath)]);
   } catch {
     return null;
   }
 
   const added = new Set();
+  const nearDeletion = new Set();
   for (const m of diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)) {
     const start = Number(m[1]);
     const count = m[2] === undefined ? 1 : Number(m[2]);
     for (let i = 0; i < count; i++) added.add(start + i);
+    // 行数が 0 のときの start は、削除された箇所の直前の行を指す
+    if (count === 0) nearDeletion.add(start).add(start + 1);
   }
-  return added;
+  return { added, nearDeletion };
 }
 
 /**
@@ -53,4 +59,4 @@ function addedLinesFromEdits(source, newStrings) {
   return added;
 }
 
-module.exports = { addedLinesFromGit, addedLinesFromEdits };
+module.exports = { changedLinesFromGit, addedLinesFromEdits };

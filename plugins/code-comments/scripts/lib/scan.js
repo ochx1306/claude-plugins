@@ -1,3 +1,6 @@
+const JS_EXTENSIONS = ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts'];
+const SOURCE_PATHSPECS = ['php', ...JS_EXTENSIONS].map((ext) => `*.${ext}`);
+
 /**
  * 拡張子から言語を判定する
  *
@@ -7,7 +10,7 @@
 function langOf(filePath) {
   const ext = filePath.toLowerCase().split('.').pop();
   if (ext === 'php') return 'php';
-  if (['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts'].includes(ext)) return 'js';
+  if (JS_EXTENSIONS.includes(ext)) return 'js';
   return null;
 }
 
@@ -141,4 +144,4 @@ function stripStar(text) {
   return text.replace(/^\s*\*?/, '').trim();
 }
 
-module.exports = { langOf, scanComments };
+module.exports = { SOURCE_PATHSPECS, langOf, scanComments };

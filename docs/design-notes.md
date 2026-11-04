@@ -27,6 +27,7 @@ plugins/code-comments/
 ├── rules/comments.md   # 注入する原則（短く保つ。毎セッション入るため）
 ├── scripts/            # 検出スクリプト（hook とスキルで共用）
 └── skills/
+    ├── check/          # hook と同じ検査をブランチ全体やディレクトリに実行する（scripts/check-comments.js）
     ├── list/           # 差分のコメントの一覧（scripts/list-comments.js）
     ├── verify/         # コメントだけの変更かの確認（scripts/token-diff.js）
     └── docblock/
@@ -80,6 +81,8 @@ plugins/code-comments/
 - docblock がない関数（宣言行か、そのすぐ上の行が追加されたもの）
 - 直後に空行がある docblock（ファイル先頭の docblock は除く）
 - `@param` の名前が関数の引数にない docblock（関数の間に別の関数を差し込み、docblock がずれたもの）
+- 孤立した docblock（直後が別の docblock、閉じ括弧、ファイルの終わり）。関数を消したときも検出するため、削除された箇所の前後の行も対象にする
+- `@param` がない引数と、引数と順序が違う `@param`（`@param` を 1 つも書いていない docblock は対象にしない）
 - 関数名の接頭辞（`vocabulary.json` の `prefixes`）から推定した述語と、summary の述語が違う docblock
 - docblock は変更されていないのに、宣言行が変わった関数。上の 2 つで判定できないずれと書き直し漏れを、関数名と summary を見比べて AI に確認させる
 - summary 行の文末・述語が語彙表にないもの（述語は関数の docblock だけ）

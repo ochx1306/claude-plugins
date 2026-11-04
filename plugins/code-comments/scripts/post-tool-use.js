@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { langOf } = require('./lib/scan');
 const { checkSource } = require('./lib/checks');
-const { addedLinesFromGit, addedLinesFromEdits } = require('./lib/added-lines');
+const { changedLinesFromGit, addedLinesFromEdits } = require('./lib/added-lines');
 const { formatFindings } = require('./check-comments');
 
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -19,10 +19,12 @@ if (input.tool_name === 'Edit') {
 } else if (input.tool_name === 'MultiEdit') {
   added = addedLinesFromEdits(source, (toolInput.edits || []).map((e) => e.new_string || ''));
 }
+const changed = changedLinesFromGit(filePath);
 // フォーマッターなどで new_string がそのまま残っていないときは、git の差分で代わりにする
-if (added === undefined) added = addedLinesFromGit(filePath);
+if (added === undefined) added = changed && changed.added;
 
-const findings = checkSource(source, lang, added);
+// new_string からは削除された箇所がわからないため、関数を消して docblock が残った場合は git の差分で検出する
+const findings = checkSource(source, lang, added, changed ? changed.nearDeletion : new Set());
 if (findings.length === 0) process.exit(0);
 
 const reason = [

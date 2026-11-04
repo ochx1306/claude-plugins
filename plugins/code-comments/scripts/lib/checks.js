@@ -28,6 +28,11 @@ const DIVIDER = [/^[-=*#/~_+]{3,}$/, /^[-=*#~]{2,}.*[-=*#~]{2,}$/];
 // クラス名だけの括弧は、外すと指す先がわからなくなることがあるため対象にしない。半角の括弧は関数呼び出しと区別するため、直前が識別子のものを除く
 const PAREN_REFERENCE = /(?:（|(?<![\w$])\()[\w$./\\-]*(?:\.(?:php|jsx?|mjs|cjs|tsx?|mts|cts|json|tpl|sql)|(?:::|->)\w+(?:\(\))?|\(\))[）)]/;
 const ALIGNED_TAG = /^@\w+.*\s{2,}\S/;
+// 宣言ではなく文に型を伝える注釈。続けて並べる書き方があるため、1 行のものは孤立の検査から除く
+const INLINE_ANNOTATION = /^@(?:var|type)\b/;
+// 直後の宣言を説明しない docblock。単独で置く書き方のため、孤立の検査から除く
+const STANDALONE_TAG = /^@(?:typedef|callback|import|file|fileoverview|overview|module|license|packageDocumentation)\b/;
+const INHERIT_DOC = /@inheritdoc\b/i;
 
 /**
  * 関数宣言の行番号と名前を返す
@@ -169,15 +174,16 @@ function isFileHeader(lines, start) {
  * @param {'php'|'js'} lang
  * @param {Map<number, object>} docByEnd docblock の最終行の行番号から docblock への対応
  * @param {(line: number) => boolean} isAdded
+ * @param {(line: number) => boolean} isChanged 追加された行と、削除された箇所の前後の行なら true
  * @returns {{line: number, rule: string, message: string}[]}
  */
-function checkFunctions(lines, lang, docByEnd, isAdded) {
+function checkFunctions(lines, lang, docByEnd, isAdded, isChanged) {
   const findings = [];
   for (const fn of findFunctions(lines, lang)) {
     const above = lineAbove(lines, fn.line);
     const doc = docByEnd.get(above);
     // 関数の間に別の関数を入れると、もとの関数の宣言行は変わらず、すぐ上の行だけが追加された行になる
-    const touched = isAdded(fn.line) || isAdded(above) || (doc && doc.lines.some((l) => isAdded(l.line)));
+    const touched = isChanged(fn.line) || isChanged(above) || (doc && doc.lines.some((l) => isChanged(l.line)));
     if (!touched) continue;
 
     if (!doc) {
@@ -190,13 +196,17 @@ function checkFunctions(lines, lang, docByEnd, isAdded) {
 
     const documented = docParams(doc, lang);
     const actual = functionParams(lines, fn.line, lang);
-    if (actual !== null && documented.some((name) => !actual.includes(name))) {
-      findings.push({
-        line: fn.line,
-        rule: 'docblock-mismatch',
-        message: `docblock の @param（${documented.join(', ')}）が ${fn.name} の引数（${actual.join(', ') || 'なし'}）と合わない。別の関数の docblock になっていないか確認する`,
-      });
-      continue;
+    if (actual !== null && !doc.lines.some((l) => INHERIT_DOC.test(l.text))) {
+      if (documented.some((name) => !actual.includes(name))) {
+        findings.push({
+          line: fn.line,
+          rule: 'docblock-mismatch',
+          message: `docblock の @param（${documented.join(', ')}）が ${fn.name} の引数（${actual.join(', ') || 'なし'}）と合わない。別の関数の docblock か、引数名の変更や綴りの違いかを確認する`,
+        });
+        continue;
+      }
+      // @param を 1 つも書いていない docblock は書き方の方針の問題なので、突き合わせない
+      if (documented.length > 0) findings.push(...checkParamList(fn, documented, actual));
     }
 
     const summary = innerLines(doc.lines).find((l) => l.text !== '');
@@ -224,6 +234,26 @@ function checkFunctions(lines, lang, docByEnd, isAdded) {
 }
 
 /**
+ * 引数に対する @param の不足と順序の問題を返す
+ *
+ * @param {{line: number, name: string}} fn
+ * @param {string[]} documented すべて引数にある @param の名前
+ * @param {string[]} actual 引数の名前。TS の this 引数は実行時の引数ではないため対象にしない
+ * @returns {{line: number, rule: string, message: string}[]}
+ */
+function checkParamList(fn, documented, actual) {
+  const params = actual.filter((name) => name !== 'this');
+  const missing = params.filter((name) => !documented.includes(name));
+  if (missing.length > 0) {
+    return [{ line: fn.line, rule: 'param-missing', message: `${fn.name} の引数（${missing.join(', ')}）に @param がない` }];
+  }
+  if (documented.join('\0') !== params.join('\0')) {
+    return [{ line: fn.line, rule: 'param-order', message: `@param の順序（${documented.join(', ')}）が ${fn.name} の引数（${params.join(', ')}）と違う` }];
+  }
+  return [];
+}
+
+/**
  * 関数名の接頭辞を返す
  *
  * @param {string} name camelCase か snake_case の関数名
@@ -235,24 +265,68 @@ function namePrefix(name) {
 }
 
 /**
- * 直後に空行がある docblock の問題を返す
+ * コメントだけの行の行番号を返す
  *
  * @param {string[]} lines
- * @param {{start: number, end: number}[]} docs
- * @param {(line: number) => boolean} isAdded
+ * @param {{line: number, column: number}[]} lineComments
+ * @param {{start: number, end: number, column: number, endColumn: number, isDoc: boolean}[]} blocks
+ * @returns {Set<number>} docblock の行は含まない
+ */
+function commentOnlyLines(lines, lineComments, blocks) {
+  const result = new Set();
+  for (const c of lineComments) {
+    if (lines[c.line - 1].slice(0, c.column).trim() === '') result.add(c.line);
+  }
+  for (const b of blocks) {
+    const alone = lines[b.start - 1].slice(0, b.column).trim() === '' && lines[b.end - 1].slice(b.endColumn).trim() === '';
+    if (b.isDoc || !alone) continue;
+    for (let l = b.start; l <= b.end; l++) result.add(l);
+  }
+  return result;
+}
+
+/**
+ * 孤立した docblock と、直後に空行がある docblock の問題を返す
+ *
+ * @param {string[]} lines
+ * @param {{start: number, end: number, lines: {text: string}[]}[]} docs
+ * @param {Set<number>} commentOnly コメントだけの行の行番号
+ * @param {(line: number) => boolean} isChanged 追加された行と、削除された箇所の前後の行なら true
  * @returns {{line: number, rule: string, message: string}[]}
  */
-function checkDetached(lines, docs, isAdded) {
+function checkPlacement(lines, docs, commentOnly, isChanged) {
   const findings = [];
+  const docByStart = new Map(docs.map((b) => [b.start, b]));
+  const isInline = (b) => b.start === b.end && INLINE_ANNOTATION.test(b.lines[0].text);
+
   for (const b of docs) {
-    // /** ... */ foo() のように同じ行にコードが続くものは、空行の判定から除く
-    if (!lines[b.end - 1].trim().endsWith('*/')) continue;
+    // /** ... */ foo() のように同じ行にコードが続くものは、判定から除く
+    if (!lines[b.end - 1].trim().endsWith('*/') || isFileHeader(lines, b.start)) continue;
+
     let next = b.end + 1;
     while (next <= lines.length && lines[next - 1].trim() === '') next++;
-    if (next === b.end + 1 || next > lines.length || isFileHeader(lines, b.start)) continue;
+    let code = next;
+    while (code <= lines.length && (lines[code - 1].trim() === '' || commentOnly.has(code))) code++;
+
     let touched = false;
-    for (let l = b.start; l <= next; l++) touched = touched || isAdded(l);
-    if (touched) {
+    for (let l = b.start; l <= Math.min(code, lines.length); l++) touched = touched || isChanged(l);
+    if (!touched) continue;
+
+    let orphanReason = null;
+    if (!isInline(b) && !b.lines.some((l) => STANDALONE_TAG.test(l.text))) {
+      const following = docByStart.get(code);
+      if (code > lines.length) orphanReason = 'ファイルの終わり';
+      else if (following && !isInline(following)) orphanReason = '別の docblock';
+      else if (lines[code - 1].trim().startsWith('}')) orphanReason = '閉じ括弧';
+    }
+    if (orphanReason) {
+      const summary = b.lines.find((l) => l.text !== '');
+      findings.push({
+        line: b.start,
+        rule: 'docblock-orphan',
+        message: `孤立した docblock（直後が${orphanReason}）:「${summary ? summary.text : ''}」。関数の間に別の関数を入れたか、関数を消して docblock だけ残した可能性がある`,
+      });
+    } else if (next !== b.end + 1 && next <= lines.length) {
       findings.push({ line: b.end, rule: 'docblock-detached', message: 'docblock の直後に空行がある。説明する宣言の直上に置く' });
     }
   }
@@ -383,18 +457,20 @@ function checkCommentText(comment, isDoc) {
  * @param {string} source
  * @param {'php'|'js'} lang
  * @param {Set<number>|null} added 追加された行番号。null ならすべての行を対象にする
+ * @param {Set<number>} [nearDeletion] 削除された箇所の前後の行番号。関数と docblock の結び付きの検査だけで対象にする
  * @returns {{line: number, rule: string, message: string}[]} 行番号の順
  */
-function checkSource(source, lang, added) {
+function checkSource(source, lang, added, nearDeletion = new Set()) {
   const isAdded = (line) => added === null || added.has(line);
+  const isChanged = (line) => isAdded(line) || nearDeletion.has(line);
   const lines = source.split(/\r?\n/);
   const { lineComments, blocks } = scanComments(source, lang);
   const findings = [];
 
   const docs = blocks.filter((b) => b.isDoc);
   const functionDocEnds = new Set(findFunctions(lines, lang).map((fn) => lineAbove(lines, fn.line)));
-  findings.push(...checkFunctions(lines, lang, new Map(docs.map((b) => [b.end, b])), isAdded));
-  findings.push(...checkDetached(lines, docs, isAdded));
+  findings.push(...checkFunctions(lines, lang, new Map(docs.map((b) => [b.end, b])), isAdded, isChanged));
+  findings.push(...checkPlacement(lines, docs, commentOnlyLines(lines, lineComments, blocks), isChanged));
 
   for (const c of lineComments) {
     if (isAdded(c.line)) findings.push(...checkCommentText(c, false));
