@@ -18,6 +18,11 @@
       "name": "markdown",
       "source": "./plugins/markdown",
       "description": "Markdown を記法ルールに沿って書き、レビューする"
+    },
+    {
+      "name": "sql",
+      "source": "./plugins/sql",
+      "description": "SQL と PHP の文字列連結で書いた SQL を整形する"
     }
   ]
 }
