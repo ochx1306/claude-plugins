@@ -1,6 +1,5 @@
 {
   "name": "sql",
-  "version": "0.1.0",
   "description": "SQL と PHP の文字列連結で書いた SQL を整形する",
   "author": {
     "name": "ochx1306"

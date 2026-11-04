@@ -1,6 +1,5 @@
 {
   "name": "code-comments",
-  "version": "0.1.0",
   "description": "コメントと docblock の原則を常に適用し、追加したコメントの問題を検出する",
   "author": {
     "name": "ochx1306"

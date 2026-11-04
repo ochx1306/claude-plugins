@@ -9,6 +9,7 @@
 - インストール方法
   - プライベート: `/plugin marketplace add ochx1306/claude-plugins`
   - 会社: ローカルに clone して `/plugin marketplace add <パス>`
+- `plugin.json` に `version` を書かない。書くと、その文字列を変えるまで GitHub から追加した環境に新しいコミットが届かないため。書かなければコミットごとに更新が届く（`claude plugin validate` は警告を出すが、意図したもの）。ローカルパスで追加した環境は、`version` に関係なく常に最新のファイルを読む。
 
 ## 共通方針（全スキル）
 
