@@ -110,6 +110,24 @@ function joinTokens(tokens, start, end) {
 }
 
 /**
+ * PHP のバージョンで解釈が変わる構文の注意の行を返す
+ *
+ * 変更の前後で行番号だけが違う同じ注意は、変更後のものだけを返す。
+ *
+ * @param {{notes?: string[]}} before
+ * @param {{notes?: string[]}} after
+ * @returns {string[]}
+ */
+function versionNotes(before, after) {
+  const notes = new Map();
+  for (const note of [...(after.notes || []), ...(before.notes || [])]) {
+    const key = note.replace(/^\d+行目: /, '');
+    if (!notes.has(key)) notes.set(key, `  [注意] ${note}`);
+  }
+  return [...notes.values()];
+}
+
+/**
  * 1 組のソースを比べた結果の行を返す
  *
  * @param {{label: string, beforePath: string, afterPath: string, before: string, after: string}} pair
@@ -128,11 +146,12 @@ function compare({ label, beforePath, afterPath, before, after }) {
   } catch (e) {
     return { status: 'failed', lines: [`[ERROR] ${label}: 変更後を解析できない（${e.message}）`] };
   }
+  const notes = versionNotes(a, b);
   const hunks = diffHunks(a.tokens, b.tokens);
   if (hunks.length === 0) {
-    return { status: 'same', lines: [`[OK] ${label}（${a.tokens.length} トークン一致）`] };
+    return { status: 'same', lines: [`[OK] ${label}（${a.tokens.length} トークン一致）`, ...notes] };
   }
-  const lines = [`[NG] ${label}（差分 ${hunks.length} か所・トークン数 ${a.tokens.length} → ${b.tokens.length}）`];
+  const lines = [`[NG] ${label}（差分 ${hunks.length} か所・トークン数 ${a.tokens.length} → ${b.tokens.length}）`, ...notes];
   for (const [aStart, aEnd, bStart, bEnd] of hunks) {
     lines.push(`  変更前 ${lineRange(a.lines, aStart, aEnd)} / 変更後 ${lineRange(b.lines, bStart, bEnd)}`);
     if (aStart < aEnd) lines.push(`    - ${joinTokens(a.tokens, aStart, aEnd)}`);

@@ -17,14 +17,19 @@ const HEREDOC = /<<<[ \t]*(?:"([A-Za-z_\x80-￿][\w\x80-￿]*)"|'([A-Za-z_\x80-�
  * 文字列の中の変数展開は、空白も含めて文字列の一部として比べる。
  *
  * @param {string} source LF にそろえたソース
- * @returns {{tokens: string[], lines: number[]}} lines は各トークンの行番号
+ * @returns {{tokens: string[], lines: number[], notes: string[]}} lines は各トークンの行番号。notes は PHP のバージョンで解釈が変わる構文の説明
  * @throws {Error} 解析できないとき
  */
 function tokenizePhp(source) {
   const lineAt = lineLocator(source);
   const tokens = [];
   const lines = [];
+  const notes = new Map();
   let i = 0;
+
+  const noteOnce = (key, message) => {
+    if (!notes.has(key)) notes.set(key, `${lineAt(i)}行目: ${message}`);
+  };
 
   const fail = (message, at = i) => {
     throw new Error(`${lineAt(at)}行目: ${message}`);
@@ -80,6 +85,7 @@ function tokenizePhp(source) {
     const bodyStart = i + m[0].length;
     const found = end.exec(source.slice(bodyStart));
     if (!found) fail('ヒアドキュメントが閉じていない');
+    if (/^[ \t]/.test(found[0])) noteOnce('heredoc', '字下げしたヒアドキュメントの終わりを PHP 7.3 以降の書き方として解釈した。PHP 7.2 では本文の続きになる');
     const stop = bodyStart + found.index + found[0].length;
     emit(source.slice(i, stop), i);
     i = stop;
@@ -126,6 +132,7 @@ function tokenizePhp(source) {
           continue;
         }
         const punctuator = PUNCTUATORS.find((p) => source.startsWith(p, i)) || c;
+        if (punctuator === '#[') noteOnce('attribute', '#[ を PHP 8 の属性として解釈した。PHP 7 では行コメントになる');
         emit(punctuator, i);
         i += punctuator.length;
       }
@@ -142,7 +149,7 @@ function tokenizePhp(source) {
     emit(open[0].toLowerCase(), htmlEnd);
     scanPhp();
   }
-  return { tokens, lines };
+  return { tokens, lines, notes: [...notes.values()] };
 }
 
 module.exports = { tokenizePhp };
