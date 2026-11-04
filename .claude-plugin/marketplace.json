@@ -13,6 +13,11 @@
       "name": "backlog",
       "source": "./plugins/backlog",
       "description": "Backlog の課題単位で作業コンテキストとブランチを準備する"
+    },
+    {
+      "name": "markdown",
+      "source": "./plugins/markdown",
+      "description": "Markdown を記法ルールに沿って書き、レビューする"
     }
   ]
 }
