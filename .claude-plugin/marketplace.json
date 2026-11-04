@@ -23,6 +23,11 @@
       "name": "sql",
       "source": "./plugins/sql",
       "description": "SQL と PHP の文字列連結で書いた SQL を整形する"
+    },
+    {
+      "name": "git",
+      "source": "./plugins/git",
+      "description": "保護ブランチへのコミットやマージを確認してから実行する"
     }
   ]
 }

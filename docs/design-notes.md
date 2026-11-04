@@ -195,6 +195,20 @@ plugins/code-comments/
 - 式の連結と変数展開を含むブロックも、SQL として解析できないためパディングだけを直す。
 - 書き換えはスクリプトが行う（`--write`）。AI が結果を書き写す手順を残さないため。
 
+## プラグイン: `git`
+
+- 保護ブランチへのコミットは PreToolUse hook（`scripts/guard-protected-branch.js`）で確認する。完全には禁止しない。スキルの指示ではなく hook の `ask` にしたのは、AI が確認を飛ばせないようにするため。
+- 保護ブランチは `~/.claude/git.json` の `protectedBranches` で設定する（例: `{ "protectedBranches": ["hotfix", "develop"] }`）。会社のルールのため、公開リポジトリに置かない。未設定なら確認しない。
+- ブランチを判定できないコミット（`cd $DIR && git commit`、同じコマンドで先に `git switch` するものなど）も確認する。
+- 対象は Claude Code の Bash と PowerShell から実行する `git commit`、`git merge`、`git cherry-pick`、`git rebase`、`git revert`、`git pull`、`git am`。ターミナルでの手動の操作と git のエイリアスは対象外。
+- コミットを作らない実行は確認しない: `--abort` などの取り消しと表示、`git pull --dry-run`、`git merge --squash`、`git merge --no-commit --no-ff`、`git cherry-pick` と `git revert` の `-n`（`--no-commit`）。`git merge --no-commit` だけでは fast-forward でブランチが進むため確認する。
+- `git rebase` の途中は HEAD がブランチを指さないため、`git rebase --continue` や途中の `git commit` は確認しない。開始時に確認している。
+
+### 未決事項
+
+- コミットのスキル。会社で使っているスキルを元に改善する
+- 条件付きで確認を省くモード（例: `git pull --ff-only` で保護ブランチを最新にするだけのとき）。条件は未定
+
 ## プラグイン: `markdown`
 
 - `style` スキル（`/markdown:style`）: 日本語の Markdown 文書を記法ルールに沿って書く・レビューする。ユーザーが社内 Wiki 用に作った SKILL.md を元にし、Markdown 全般に広げた。
