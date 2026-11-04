@@ -1,0 +1,74 @@
+---
+name: verify
+description: PHP・JS・TS の変更がコメントと空白だけで、実行されるコードが 1 トークンも変わっていないことを機械的に確かめる。コメントや docblock を直した・整形しただけのとき、コメントだけのコミットを作る前後、「コメントだけの変更か確認して」「コードは変わってない？」「トークン比較」と言われたときに使う。
+argument-hint: "[--from 版] [--to 版] [パス...]"
+allowed-tools: Bash(node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js" *)
+---
+
+## 目的
+
+変更の前後で、コメントと空白を除いたトークン列を比べる。一致すれば、実行されるコードは変わっていない。
+
+目で差分を読んで「コメントだけ」と判断しない。必ずこのスクリプトの結果を根拠にする。
+
+## 手順
+
+スクリプトを実行し、結果をトークン数と一緒に報告する。ユーザーが引数を指定していれば、そのまま渡す。
+
+```sh
+node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js" $ARGUMENTS
+```
+
+`[NG]` が出たら、コメント以外の変更として該当箇所を示す。`[ERROR]` が出たら、一致とは報告しない。
+
+## 使い方
+
+```sh
+# 作業ツリーの未コミットの変更（HEAD との差）
+node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js"
+
+# 直前のコミット
+node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js" --from HEAD~1 --to HEAD
+
+# ファイルを絞る
+node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js" --from main src/foo.ts
+
+# git を使わず 2 つのファイルを比べる
+node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js" --files 変更前.php 変更後.php
+
+# 比較に使うトークン列を表示する
+node "${CLAUDE_SKILL_DIR}/scripts/token-diff.js" --dump src/foo.ts
+```
+
+| オプション | 意味 | 既定 |
+|---|---|---|
+| `--from REV` | 変更前の版 | `HEAD` |
+| `--to REV` | 変更後の版 | 作業ツリー |
+| `--files A B` | git を使わず 2 つのファイルを比べる | なし |
+| `--dump FILE` | トークン列を 1 行に 1 トークンで表示する | なし |
+
+終了コードは、`0` がすべて一致、`1` が差分あり、`2` が失敗。
+
+## 結果の読み方
+
+```text
+[OK] src/foo.php（10322 トークン一致）
+[NG] src/bar.ts（差分 1 か所・トークン数 2489 → 2490）
+  変更前 239行目 / 変更後 246行目
+    - message
+    + prefix + message
+[SKIP] src/baz.js（新しく追加されたファイル）
+[ERROR] src/qux.tsx: 変更後を解析できない（12行目: 文字列が閉じていない）
+```
+
+- `[OK]`: コメントと空白以外は 1 トークンも違わない。
+- `[NG]`: `-` と `+` は違うトークン。行番号は元のソースの行。文字列の中身もトークンなので、メッセージの文言を変えれば `[NG]` になる。
+- `[SKIP]`: 追加・削除されたファイルは比べられない。コメントだけの変更とは言えないため、一致として報告しない。
+- `[ERROR]`: 解析できないときは、誤って一致と判定しないよう失敗にする。
+
+## 比較の規則
+
+- CRLF は LF にそろえて比べる。
+- `<改行>` は JS と TS の疑似トークン。`return` の直後や `++` の直前のように、改行の有無で意味が変わる位置の改行を表す。
+- PHP の閉じタグの直後の改行は、出力されないため比べない。
+- 書き方の違いは正規化しない。`array()` と `[]`、クォートの種類、末尾のカンマの変更は差分になる。PHP の文字列の中の変数展開と JSX のテキストは、空白も比べる。

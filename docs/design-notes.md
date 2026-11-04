@@ -28,6 +28,7 @@ plugins/code-comments/
 ├── scripts/            # 検出スクリプト（hook とスキルで共用）
 └── skills/
     ├── list/           # 差分のコメントの一覧（scripts/list-comments.js）
+    ├── verify/         # コメントだけの変更かの確認（scripts/token-diff.js）
     └── docblock/
         ├── SKILL.md
         └── references/
@@ -95,6 +96,13 @@ plugins/code-comments/
 - `list` スキル（`/code-comments:list`）: 分岐点から作業ツリーまでの差分のコメントを一覧にし、AI が頭から読んで見直す。検査スクリプトで判定できない用語のゆれや責務の外の記述を、変更全体で探すためのもの。
 - 差分の行だけを推測で判定せず、変更前後のファイル全体を解析してコメントの行を求める。PHP と JS・TS は `scan.js` を使い、hook と判定をそろえる。
 - 比べる相手の既定は origin の既定のブランチにする。分岐元が違うときは `--base` で指定する。
+
+### コメントだけの変更の確認
+
+- `verify` スキル（`/code-comments:verify`）: 変更の前後でコメントと空白を除いたトークン列を比べる。対象は PHP・JS・TS（JSX を含む）。
+- Node だけで動かす。会社のホストに PHP がなく、SSH で VM に送る構成だと環境に依存するため。`npm install` が実行されないので、字句解析は依存なしで実装する（`skills/verify/scripts/lib/`）。
+- 目的はコードの変更を見逃さないことなので、誤った一致を最も避ける。解析できない構文は失敗にし、判断に迷う書き方の違いは差分として報告する。
+- JS と TS は空白の一部が意味を持つ。`return` の直後などセミコロンの自動挿入に関わる改行は、疑似トークンとして比べる。
 
 ### 取り入れない規約
 
