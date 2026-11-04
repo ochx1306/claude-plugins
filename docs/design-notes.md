@@ -26,12 +26,14 @@ plugins/code-comments/
 ├── hooks/hooks.json    # SessionStart: rules を注入 / PostToolUse(Edit|Write): 検出スクリプト
 ├── rules/comments.md   # 注入する原則（短く保つ。毎セッション入るため）
 ├── scripts/            # 検出スクリプト（hook とスキルで共用）
-└── skills/docblock/
-    ├── SKILL.md
-    └── references/
-        ├── style-ja.md # 日本語の文体・述語の語彙表・禁止語
-        ├── php.md      # PHPDoc の記法、型宣言との重複の扱い
-        └── js-ts.md    # JSDoc / TSDoc、JS と TS の差分
+└── skills/
+    ├── list/           # 差分のコメントの一覧（scripts/list-comments.js）
+    └── docblock/
+        ├── SKILL.md
+        └── references/
+            ├── style-ja.md # 日本語の文体・述語の語彙表・禁止語
+            ├── php.md      # PHPDoc の記法、型宣言との重複の扱い
+            └── js-ts.md    # JSDoc / TSDoc、JS と TS の差分
 ```
 
 - CLAUDE.md はプラグインに入れられないので、原則は SessionStart hook でコンテキストに注入する。
@@ -87,6 +89,12 @@ plugins/code-comments/
 - 括弧で添えたファイルパスやメソッド名。クラス名だけの括弧は、外すと指す先がわからなくなることがあるため対象にしない
 - タグの型や名前を空白で縦にそろえた docblock
 - 誤検出はあってよい。AI に確認させて直させる。
+
+### コメントの一覧
+
+- `list` スキル（`/code-comments:list`）: 分岐点から作業ツリーまでの差分のコメントを一覧にし、AI が頭から読んで見直す。検査スクリプトで判定できない用語のゆれや責務の外の記述を、変更全体で探すためのもの。
+- 差分の行だけを推測で判定せず、変更前後のファイル全体を解析してコメントの行を求める。PHP と JS・TS は `scan.js` を使い、hook と判定をそろえる。
+- 比べる相手の既定は origin の既定のブランチにする。分岐元が違うときは `--base` で指定する。
 
 ### 取り入れない規約
 

@@ -20,9 +20,9 @@ function langOf(filePath) {
  * @param {string} source
  * @param {'php'|'js'} lang
  * @returns {{
- *   lineComments: {line: number, text: string}[],
- *   blocks: {start: number, end: number, isDoc: boolean, lines: {line: number, text: string}[]}[]
- * }} 行番号は 1 始まり。blocks の text は先頭の * を除いたもの
+ *   lineComments: {line: number, column: number, text: string}[],
+ *   blocks: {start: number, end: number, column: number, endColumn: number, isDoc: boolean, lines: {line: number, text: string}[]}[]
+ * }} 行番号は 1 始まり。column は記号の開始位置で、endColumn は終了の記号の直後の位置。blocks の text は先頭の * を除いたもの
  */
 function scanComments(source, lang) {
   const lineComments = [];
@@ -41,6 +41,7 @@ function scanComments(source, lang) {
         if (c === '*' && next === '/') {
           block.lines.push({ line, text: stripStar(raw.slice(textStart, j)) });
           block.end = line;
+          block.endColumn = j + 2;
           blocks.push(block);
           block = null;
           j += 2;
@@ -65,13 +66,13 @@ function scanComments(source, lang) {
       }
       if (c === '/' && next === '*') {
         const isDoc = raw[j + 2] === '*' && raw[j + 3] !== '/';
-        block = { start: line, end: line, isDoc, lines: [] };
+        block = { start: line, end: line, column: j, endColumn: raw.length, isDoc, lines: [] };
         j += isDoc ? 3 : 2;
         textStart = j;
         continue;
       }
       if ((c === '/' && next === '/') || (lang === 'php' && c === '#' && next !== '[')) {
-        lineComments.push({ line, text: raw.slice(j + (c === '#' ? 1 : 2)).trim() });
+        lineComments.push({ line, column: j, text: raw.slice(j + (c === '#' ? 1 : 2)).trim() });
         break;
       }
       if (lang === 'js' && c === '/' && startsRegex(raw.slice(0, j))) {
