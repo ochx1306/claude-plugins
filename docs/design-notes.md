@@ -197,8 +197,17 @@ plugins/code-comments/
 
 ## プラグイン: `git`
 
-- 保護ブランチへのコミットは PreToolUse hook（`scripts/guard-protected-branch.js`）で確認する。完全には禁止しない。スキルの指示ではなく hook の `ask` にしたのは、AI が確認を飛ばせないようにするため。
-- 保護ブランチは `~/.claude/git.json` の `protectedBranches` で設定する（例: `{ "protectedBranches": ["hotfix", "develop"] }`）。会社のルールのため、公開リポジトリに置かない。未設定なら確認しない。
+- 保護ブランチへのコミットは PreToolUse hook（`scripts/guard-commit.js`）で確認する。完全には禁止しない。スキルの指示ではなく hook の `ask` にしたのは、AI が確認を飛ばせないようにするため。
+- 設定は `~/.claude/git.json` に置く。会社のルールのため、公開リポジトリにも会社のリポジトリにも置かない。`repos` の `path` でリポジトリごとに切り替える（書き方は `skills/commit/SKILL.md`）。保護ブランチは未設定なら確認しない。
+- `commit` スキル（`/git:commit`）: 会社で使っていた commit スキルを汎用化した。今は対話モードだけ。
+  - スキルを通さない `git commit` は hook が拒否する。`commit.js check` がメッセージとステージ内容のハッシュを `.git/claude-commit-check.json` に記録し、hook が一致を確かめる。検査のあとの変更を防ぐため、`git commit -F <ファイル>` を単独で実行する形だけを通す。
+  - hook を止められるのは Claude Code からの実行だけのため、手動のコミットは対象外。リポジトリごとに `commit.enforce: false` で無効にできる。
+  - 対話モードの承認は hook の `ask` のダイアログで行う。AI が承認を飛ばせないようにするため。
+  - merge や rebase の途中のコミットは git がメッセージを用意するため、拒否しない。
+  - 対象を明示しない `git add`（`-A`、`-u`、`.`）も拒否する。
+  - `commit.js check` の `errors` は機械的な違反でコミットを止める。`warnings`（経緯の語、参照先のないファイル、機密の可能性など）は誤検出を含むため止めず、AI が確認し、ダイアログにも表示する。
+  - AI の署名は環境の指定に従う。会社のスキルにあった署名の禁止は取り込まない。
+  - 形を変えて検査を回避する `git commit` の余地: 同じコマンドの他の処理は拒否するが、エイリアスと `sh -c` などの中は検出できない。
 - ブランチを判定できないコミット（`cd $DIR && git commit`、同じコマンドで先に `git switch` するものなど）も確認する。
 - 対象は Claude Code の Bash と PowerShell から実行する `git commit`、`git merge`、`git cherry-pick`、`git rebase`、`git revert`、`git pull`、`git am`。ターミナルでの手動の操作と git のエイリアスは対象外。
 - コミットを作らない実行は確認しない: `--abort` などの取り消しと表示、`git pull --dry-run`、`git merge --squash`、`git merge --no-commit --no-ff`、`git cherry-pick` と `git revert` の `-n`（`--no-commit`）。`git merge --no-commit` だけでは fast-forward でブランチが進むため確認する。
@@ -206,7 +215,8 @@ plugins/code-comments/
 
 ### 未決事項
 
-- コミットのスキル。会社で使っているスキルを元に改善する
+- `commit` スキルの自動モード（承認待ちなしで進める）。停止条件のスクリプトが揃ってから入れる。保護ブランチでは確認ダイアログで止まるため、開始時に判定して止める
+- force push と `git reset --hard` などの破棄操作の拒否。push とブランチ操作のスキルと合わせて決める
 - 条件付きで確認を省くモード（例: `git pull --ff-only` で保護ブランチを最新にするだけのとき）。条件は未定
 
 ## プラグイン: `markdown`
