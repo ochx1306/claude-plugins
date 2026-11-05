@@ -166,7 +166,7 @@ function runCheck(root, messageFile, amend) {
       warnings: result.warnings,
     });
   }
-  return { ok, ...result };
+  return { ok, message, ...result };
 }
 
 const [subcommand, ...args] = process.argv.slice(2);
