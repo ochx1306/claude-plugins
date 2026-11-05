@@ -46,8 +46,9 @@ function contentLines(message) {
  * @returns {string[]}
  */
 function findFileLikeNames(text) {
-  const withoutUrls = text.replace(/\S+:\/\/\S+/g, ' ').replace(/\S+@\S+/g, ' ');
-  return [...new Set(withoutUrls.match(FILE_LIKE) || [])];
+  // URL、メールアドレス、ホーム配下のパスはリポジトリの中を指さないため除く
+  const repoText = text.replace(/\S+:\/\/\S+/g, ' ').replace(/\S+@\S+/g, ' ').replace(/~[\\/]\S*/g, ' ');
+  return [...new Set(repoText.match(FILE_LIKE) || [])];
 }
 
 /**
