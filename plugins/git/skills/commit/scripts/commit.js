@@ -14,6 +14,8 @@ const { getFormat, checkMessage } = require('./lib/message');
 const ISSUE_KEY = /(?<![A-Za-z0-9])[A-Z][A-Z0-9_]*-[0-9]+(?![0-9])/g;
 const SENSITIVE = /(^|\/)(\.env(?!\.(example|sample|template)$)(\.[^/]+)?|id_rsa|id_ed25519|credentials[^/]*|secrets?[^/]*|[^/]+\.(pem|key|p12|pfx))$/i;
 const GENERATED = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|dist\/|build\/|vendor\/|[^/]+\.min\.(js|css)$)/;
+// git の空のツリーのハッシュ。親のないコミットの比較先に使う
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 
 /**
  * パスの一覧を、コミットの判断に関わる種類ごとに分けて返す
@@ -126,6 +128,17 @@ function inspect(root, message, amend) {
 }
 
 /**
+ * --amend で作り直したあとのコミットに含まれるファイルの数を返す
+ *
+ * @param {string} root
+ * @returns {number}
+ */
+function getAmendedFileCount(root) {
+  const base = git(['rev-parse', '-q', '--verify', 'HEAD~1'], root).status === 0 ? 'HEAD~1' : EMPTY_TREE;
+  return gitPaths(['diff', '--cached', '--name-only', '--no-renames', '-z', base], root).length;
+}
+
+/**
  * メッセージとステージ内容の検査の結果を返す
  *
  * 問題がなければ、hook が照合する記録を残す。
@@ -149,7 +162,7 @@ function runCheck(root, messageFile, amend) {
       tree,
       amend,
       title: message.split(/\r?\n/)[0],
-      fileCount: result.staged.length,
+      fileCount: amend ? getAmendedFileCount(root) : result.staged.length,
       warnings: result.warnings,
     });
   }
