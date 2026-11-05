@@ -2,7 +2,7 @@
 // PreToolUse(Bash|PowerShell) hook。コミットを作る git コマンドを次のように止める。
 // - commit スキルの検査を通っていない git commit と、対象ファイルを明示しない git add を拒否する
 // - 検査を通った git commit は、ユーザーの承認を挟んでから実行させる
-// - 保護ブランチ（~/.claude/git.json の protectedBranches）とブランチを判定できない操作も確認する
+// - 保護ブランチとブランチを判定できない操作も確認する
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
