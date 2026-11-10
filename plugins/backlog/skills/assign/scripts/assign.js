@@ -21,31 +21,13 @@ const { execFileSync, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { loadConfig } = require('../../../scripts/lib/config');
+const { findKeys } = require('../../../scripts/lib/key');
 const { SUMMARY_DIR, STAGES, SUMMARY_ONLY, TEMPLATES, listUnits, inspectIssueDir } = require('./lib/issue');
 
-// \b は _ を単語の文字として扱い、PP-1234_PP-1235 の境界を認識しないため、前後を文字クラスで判定する
-const KEY_PATTERN = /(?<![A-Za-z0-9])[A-Z][A-Z0-9_]*-[0-9]+(?![0-9])/g;
-const NOT_KEY_PREFIXES = ['UTF', 'SHA', 'ISO', 'COVID', 'MD', 'RFC', 'TLS', 'SSL', 'HTTP', 'IPV'];
 const REQUIREMENT_SECTION = '要求';
 // 親課題には Backlog 側で更新する「## 進捗」もあり、要求の候補にはならないため、見出しの選択肢から除く
 const NOT_REQUIREMENT_SECTIONS = ['進捗'];
-
-/**
- * ~/.claude/backlog.json の設定を返す
- *
- * 会社のリポジトリのパスは公開リポジトリに置けないため、プラグインの外の設定ファイルから読む。
- *
- * @returns {{repos: string[], baseBranch?: string}}
- */
-function loadConfig() {
-  const defaults = { repos: [] };
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'backlog.json'), 'utf8'));
-    return { ...defaults, ...raw };
-  } catch {
-    return defaults;
-  }
-}
 
 /**
  * git コマンドの標準出力を返す
@@ -87,16 +69,6 @@ function resolveBaseBranch(root) {
   if (baseBranch) return baseBranch;
   const head = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], root);
   return head ? head.replace(/^origin\//, '') : 'main';
-}
-
-/**
- * 文字列に含まれる課題キーを返す
- *
- * @param {string} text
- * @returns {string[]} 出現順
- */
-function findKeys(text) {
-  return (text.match(KEY_PATTERN) || []).filter((k) => !NOT_KEY_PREFIXES.includes(k.split('-')[0]));
 }
 
 /**
