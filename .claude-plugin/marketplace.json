@@ -12,7 +12,7 @@
     {
       "name": "backlog",
       "source": "./plugins/backlog",
-      "description": "Backlog の課題単位で作業コンテキストとブランチを準備する"
+      "description": "Backlog の課題単位で作業コンテキストとブランチを準備し、雛形で決めた形の子課題を作成する"
     },
     {
       "name": "markdown",

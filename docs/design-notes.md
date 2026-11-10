@@ -174,15 +174,45 @@ plugins/code-comments/
   - サマリーの各ファイルは、Backlog API で書き込む（API キーの利用は許可されている。MCP は書き込みに使えない）
   - API キーとスペースの URL は公開リポジトリに置かない。環境変数か `~/.claude/backlog.json` から読む
 
+### 子課題の作成
+
+- `/backlog:subtask [課題キー] [雛形]` で、親課題に子課題を 1 つ作る。ステージごとの子課題を、必要になったときに 1 つずつ作るため。判定と API の呼び出しは `skills/subtask/scripts/subtask.js` が行い、AI は質問と結果の伝達だけを行う。
+- 課題キーを省略したときは、ブランチ名の先頭の課題キーを使う。指定した課題が子課題なら止める（Backlog の子課題は 1 階層だけのため）。
+- 子課題の形は雛形で決める。雛形は会社の運用なので、スクリプトには持たせず、ホームに置く。
+
+```
+~/.claude/backlog/subtasks/
+├── settings.json             全部の雛形に共通の設定。各雛形の settings.json が項目ごとに上書きする
+├── 調査および要件定義/       ディレクトリ名が雛形の名前
+│   ├── settings.json
+│   └── body.md               本文の雛形
+└── 実装/
+    └── ...
+```
+
+- `settings.json` の項目: `summary`・`issueType`・`priority`・`category`・`milestone`・`assignee`・`startDate`・`dueDate`。本文は `body.md` から作る
+- 各項目は、値の出どころと扱いを別々に持つ。「親課題から引き継いで固定」と「親課題から引き継ぎ、確認のときに変えられる」を書き分けるため
+  - 出どころ: `value`（書いた値）か `from`（`parent` は親課題の値、`me` は自分）
+  - 扱い: `mode` が `fixed`（変えられない）・`default`（初期値として出し、変えられる）・`ask`（初期値なしで毎回聞く）
+  - 値は名前で書き、ID への変換はスクリプトが行う。`value: null` は「設定しない」
+- `summary` と `body.md` では、`{{parent.key}}`・`{{parent.summary}}`・`{{parent.url}}` で親課題の値を差し込める
+- 作成の前に、スクリプトが全項目の値を出し、AskUserQuestion で確認する。`fixed` の項目を変える指定はスクリプトが拒否する
+- 親課題の子課題に同じ件名の課題があれば作らない
+- スペースの URL は `~/.claude/backlog.json` の `space`。API キーは環境変数 `BACKLOG_API_KEY`、なければ `~/.claude/backlog.json` の `apiKey`
+
+会社の設定は、共通の `settings.json` に `issueType`（タスクで固定）・`priority` と `category`（親課題から）・`milestone`（設定しない）・`assignee`（自分で固定）・`startDate` と `dueDate`（毎回聞く）を置き、各雛形には `summary` だけを書く。
+
 ### 実装済み
 
 - `assign.js`: `status`（新旧の構成を判定）、`requirement`（「## 要求」の取り出し）、`unit`（ユニットの作成）、`file`（ステージのファイルの作成）
 - 閉じたユニットへの Edit / Write を拒否する PreToolUse hook（`hooks/hooks.json` → `guard-closed-unit.js`）。Bash での書き換えは防げない
 - 古い構成（`親課題.md` と `ver.X`）の課題も読める。移行は頼まれたときだけ
+- `subtask.js`: `status`（親課題・作成済みの子課題・雛形の一覧）、`plan`（全項目の値と作成前の確認）、`create`（作成）。雛形のディレクトリ名の先頭の番号（`01_`）は選択肢の並び順にだけ使う
+- 2 つのスキルで使う `~/.claude/backlog.json` の読み込みと課題キーの検出は、`scripts/lib/` に置く
 
 ### 未決事項
 
-- Backlog API で書き込むスクリプト（どのファイルをどの課題のどこに書くか、API キーの置き場所）。書き込む前に差分を見せて確認する
+- Backlog API で書き込むスクリプト（どのファイルをどの課題のどこに書くか）。書き込む前に差分を見せて確認する。子課題の本文にサマリーのファイルの中身を入れるかも、ここで決める
 - ユニットとサマリーのどちらにどのステージのファイルを置くか（使いながら決める）
 - Backlog の本文が Backlog 記法（`**` の見出し）の課題があるか。今は Markdown の `##` だけを見出しとして扱う
 
