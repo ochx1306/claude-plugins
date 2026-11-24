@@ -55,6 +55,7 @@ plugins/code-comments/
 
 - 注入する本文は `plugins/code-comments/rules/comments.md` にある。
 - 文体は常体。summary は 1 文で、文末に「。」をつけない。
+- PHP でタグが `@var` だけの docblock は、summary を書かず `/** @var 型 説明 */` の 1 行にする（会社のルール）。`@var` のほかにもタグがある docblock は 1 行に収まらないため、通常の書式のままにする。
 
 ### 抑制したいもの
 
@@ -93,6 +94,7 @@ plugins/code-comments/
 - チケット番号のない TODO
 - 括弧で添えたファイルパスやメソッド名。クラス名だけの括弧は、外すと指す先がわからなくなることがあるため対象にしない
 - タグの型や名前を空白で縦にそろえた docblock
+- PHP で、タグが `@var` だけなのに複数行で書いた docblock
 - 誤検出はあってよい。AI に確認させて直させる。
 
 ### コメントの一覧

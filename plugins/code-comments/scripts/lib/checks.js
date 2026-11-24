@@ -452,6 +452,17 @@ function checkCommentText(comment, isDoc) {
 }
 
 /**
+ * docblock のタグが @var だけかを判定する
+ *
+ * @param {{line: number, text: string}[]} lines innerLines の戻り値
+ * @returns {boolean}
+ */
+function isVarOnly(lines) {
+  const tags = lines.filter((l) => l.text.startsWith('@'));
+  return tags.length === 1 && /^@var\b/.test(tags[0].text);
+}
+
+/**
  * 追加された行のコメントの問題を返す
  *
  * @param {string} source
@@ -483,6 +494,13 @@ function checkSource(source, lang, added, nearDeletion = new Set()) {
     }
     if (!b.isDoc) continue;
     const inner = innerLines(b.lines);
+    if (lang === 'php' && isVarOnly(inner)) {
+      if (b.start !== b.end) {
+        findings.push({ line: b.start, rule: 'var-one-line', message: '@var の docblock は summary を書かず、1 行の /** @var 型 説明 */ にする' });
+      }
+      continue;
+    }
+    if (b.start === b.end && INLINE_ANNOTATION.test(inner[0].text)) continue;
     const summary = inner.find((l) => l.text !== '');
     if (!summary || summary.text.startsWith('@')) {
       findings.push({ line: b.start, rule: 'summary-missing', message: 'docblock に summary がない' });
