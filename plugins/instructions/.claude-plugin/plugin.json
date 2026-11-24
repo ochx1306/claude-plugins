@@ -1,0 +1,7 @@
+{
+  "name": "instructions",
+  "description": "どの環境とリポジトリでも守らせる作業の指示を、毎セッションのコンテキストに注入する",
+  "author": {
+    "name": "ochx1306"
+  }
+}

@@ -28,6 +28,11 @@
       "name": "git",
       "source": "./plugins/git",
       "description": "コミットの粒度とメッセージを検査し、保護ブランチへのコミットやマージを確認する"
+    },
+    {
+      "name": "instructions",
+      "source": "./plugins/instructions",
+      "description": "どの環境とリポジトリでも守らせる作業の指示を、毎セッションのコンテキストに注入する"
     }
   ]
 }
